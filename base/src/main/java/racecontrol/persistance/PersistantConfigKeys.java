@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Leonard Schüngel
+ * Copyright (c) 2021 Leonard Schï¿½ngel
  * 
  * For licensing information see the included license (LICENSE.txt)
  */
@@ -44,5 +44,12 @@ public interface PersistantConfigKeys {
     public Key<Boolean> CONTACT_CONFIG_HINT_LAPCOUNT = new Key<>(Boolean.class, true, "contactConfigHintLapCount");
     public Key<Boolean> CONTACT_CONFIG_HINT_SPIN = new Key<>(Boolean.class, true, "contactConfigHintSpin");
     public Key<Boolean> CONTACT_CONFIG_HINT_INVALID = new Key<>(Boolean.class, true, "contactConfigHintInvalid");
+
+    /**
+     * Discord leaderboard configuration
+     */
+    public Key<Boolean> DISCORD_ENABLED = new Key<>(Boolean.class, false, "discordEnabled");
+    public Key<String> DISCORD_WEBHOOK_URL = new Key<>(String.class, "", "discordWebhookUrl");
+    public Key<Integer> DISCORD_UPDATE_INTERVAL = new Key<>(Integer.class, 30, "discordUpdateInterval");
 
 }

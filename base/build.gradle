@@ -1,98 +1,107 @@
-plugins{
+plugins {
     id 'java'
     id 'jacoco'
     id 'application'
-    id 'maven'
+    id 'com.github.hierynomus.license' version '0.16.1'
+    // id 'maven-publish' // Uncomment if you actually want publishing
 }
 
 apply from: "${rootDir}/gradle/versioning.gradle"
 apply from: "${rootDir}/gradle/license-header.gradle"
+
 def distributionName = "ACC Race Control " + project.ext.versionString
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
 
-application{
+application {
     mainClass = 'racecontrol.Main'
 }
 
+tasks.withType(JavaCompile) {
+    options.encoding = 'windows-1252'
+}
+
 repositories {
-    jcenter()
     mavenCentral()
 }
 
-sourceSets{
-    main{
-        resources{
-            srcDirs "src/main/resources", "../changelog"
+sourceSets {
+    main {
+        resources {
+            srcDirs "src/main/resources", "../changelog", "${rootDir}/config"
         }
     }
 }
 
+tasks.named('processResources') {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
 dependencies {
-    testImplementation     'junit:junit:4.13'
-    
-    //compile group: 'org.processing', name: 'core', version: '3.3.6'
+    testImplementation 'junit:junit:4.13.2'
+
     implementation 'org.processing:core:3.3.6'
-    compile group: 'com.fasterxml.jackson.core', name: 'jackson-core', version: '2.12.0'
-    compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.12.0'
-    compile group: 'com.fasterxml.jackson.core', name: 'jackson-annotations', version: '2.12.0'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.17.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.0'
+    implementation 'com.fasterxml.jackson.core:jackson-annotations:2.17.0'
     implementation 'com.google.apis:google-api-services-sheets:v4-rev20200707-1.30.10'
-    implementation 'com.google.oauth-client:google-oauth-client-jetty:1.30.4'
-    implementation 'com.google.api-client:google-api-client:1.30.4'
+    implementation 'com.google.oauth-client:google-oauth-client-jetty:1.35.0'
+    implementation 'com.google.api-client:google-api-client:1.35.0'
+    // Needed for com.google.api.client.json.jackson2.JacksonFactory
+    implementation 'com.google.http-client:google-http-client-jackson2:1.42.3'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }
 
-run{
+run {
     dependsOn installDist
-    workingDir new File(new File(buildDir, 'install'),distributionName)    
+    workingDir new File(new File(buildDir, 'install'), distributionName)
     jvmArgs("-splash:data/loading.png")
+    // Forward Discord bot env vars to the app JVM if present
+    doFirst {
+        def botToken = System.getenv('DISCORD_BOT_TOKEN')
+        def channelId = System.getenv('DISCORD_CHANNEL_ID')
+        if (botToken) {
+            jvmArgs "-Ddiscord.bot.token=${botToken}"
+        }
+        if (channelId) {
+            jvmArgs "-Ddiscord.channel.id=${channelId}"
+        }
+    }
 }
 
-distributions{
-    main{
+distributions {
+    main {
         distributionBaseName = distributionName
         contents {
-            into("/Google Sheets API Key"){
+            into("/Google Sheets API Key") {
                 from "credentials"
             }
         }
     }
 }
 
-configure(install.repositories.mavenInstaller){
-    pom.project{
-        groupId = 'org.leonard-schuengel'
-        artifactId = 'acc-race-control'
-        version = '1.0'
-    }
-}
-
-task copyLibs(type:Copy){
+task copyLibs(type: Copy) {
     group = "Release"
     from configurations.runtimeClasspath
     from jar
     into "$projectDir/build/release/" + distributionName + "/lib"
 }
-task copyDist(type:Copy){
+
+task copyDist(type: Copy) {
     group = "Release"
     from "$projectDir/src/dist"
     into "$projectDir/build/release/" + distributionName
 }
 
-task buildRelease(type: Zip){
+task buildRelease(type: Zip) {
     group = "Release"
     dependsOn copyLibs
     dependsOn copyDist
-    dependsOn install
+    dependsOn installDist
     from "$projectDir/build/release/" + distributionName
-    archiveName distributionName + ".zip"
-    destinationDir(file("$projectDir/build/release/"))
+    archiveFileName = distributionName + ".zip" // fixed for Gradle 9
+    destinationDirectory = file("$projectDir/build/release/")
 }
-
-
-
-/*
-compileJava {
-    options.compilerArgs << '-Xlint:unchecked'
-}
-*/
-
-

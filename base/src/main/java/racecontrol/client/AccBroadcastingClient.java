@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Leonard Schüngel
+ * Copyright (c) 2021 Leonard Schï¿½ngel
  * 
  * For licensing information see the included license (LICENSE.txt)
  */
@@ -109,6 +109,7 @@ public class AccBroadcastingClient
         extensions.add(VirtualSafetyCarExtension.getInstance());
         extensions.add(RaceEventExtension.get());
         extensions.add(AutobroadcastExtension.getInstance());
+        // Discord leaderboard extension removed: class not present in this codebase
 
         // add extension from modules.
         Main.getModules().forEach(module -> {

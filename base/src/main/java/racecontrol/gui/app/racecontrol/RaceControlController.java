@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Leonard Schüngel
+ * Copyright (c) 2021 Leonard Schï¿½ngel
  * 
  * For licensing information see the included license (LICENSE.txt)
  */
@@ -31,6 +31,7 @@ import racecontrol.gui.app.PageController;
 import racecontrol.gui.app.racecontrol.contact.ContactConfigController;
 import racecontrol.gui.app.racecontrol.googlesheetsapi.GoogleSheetsController;
 import racecontrol.logging.UILogger;
+// Discord config UI removed: classes not present in this codebase
 
 /**
  *
@@ -50,6 +51,7 @@ public class RaceControlController
     private final VirtualSafetyCarConfigController virtualSafetyCarController = new VirtualSafetyCarConfigController();
 
     private final ContactConfigController contactConfigController = new ContactConfigController();
+    // Discord config UI removed
 
     private final Menu.MenuItem menuItem;
 

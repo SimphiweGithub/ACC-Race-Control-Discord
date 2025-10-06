@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Leonard Schüngel
+ * Copyright (c) 2021 Leonard Schï¿½ngel
  *
  * For licensing information see the included license (LICENSE.txt)
  */
@@ -7,7 +7,12 @@ package racecontrol;
 
 import racecontrol.utility.Version;
 import racecontrol.gui.RaceControlApplet;
+import racecontrol.client.DiscordF1Ticker;
 import racecontrol.persistance.PersistantConfig;
+import java.io.File;
+import java.io.FileInputStream;
+import java.nio.charset.StandardCharsets;
+import java.io.IOException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.text.SimpleDateFormat;
@@ -29,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 import racecontrol.appextension.AppExtensionModule;
+// DiscordRotatingPublisher and DiscordF1Ticker removed in favor of webhook-based extension
 
 /**
  *
@@ -49,10 +55,15 @@ public class Main {
         LOG.info("Version: " + Version.VERSION);
         PersistantConfig.init();
 
+        // Discord webhook is configured via the settings panel and PersistantConfig now
+
         loadModules();
 
         setupSplash();
         TimeUnit.SECONDS.sleep(2);
+
+        // Start Discord bot leaderboard ticker if configured
+        DiscordF1Ticker.start();
 
         //Set system look and feel.
         try {
@@ -77,7 +88,7 @@ public class Main {
             g.fillRect(120, 140, 200, 40);
             g.setPaintMode();
             g.setColor(Color.WHITE);
-            g.drawString("Created by Leonard Schüngel", 10, 330);
+            g.drawString("Created by Leonard Schï¿½ngel", 10, 330);
             g.drawString("Version: " + Version.VERSION, 500, 330);
             splash.update();
         }
@@ -108,6 +119,37 @@ public class Main {
             LOG.log(Level.SEVERE, "Uncought exception:", e);
         }
 
+    }
+
+    private static void configureDiscordFromProperties() {
+        String userDir = System.getProperty("user.dir");
+        File propertiesFile = new File(userDir + File.separator + "discord.properties");
+        LOG.info("Discord properties file path: " + propertiesFile.getAbsolutePath());
+
+        // Default: clear property so env vars are ignored unless file is present
+        System.clearProperty("discord.webhook.url");
+
+        if (!propertiesFile.exists()) {
+            LOG.info("No Discord properties found at " + propertiesFile.getAbsolutePath() + ". Discord integration disabled.");
+            return;
+        }
+
+        Properties props = new Properties();
+        try (FileInputStream in = new FileInputStream(propertiesFile)) {
+            props.load(new java.io.InputStreamReader(in, StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            LOG.log(Level.WARNING, "Failed to read Discord properties. Discord integration disabled.", e);
+            return;
+        }
+
+        String webhookUrl = props.getProperty("discord.webhook.url", "").trim();
+        if (webhookUrl.isEmpty()) {
+            LOG.info("Property 'discord.webhook.url' missing or empty in " + propertiesFile.getAbsolutePath() + ". Discord integration disabled.");
+            return;
+        }
+
+        System.setProperty("discord.webhook.url", webhookUrl);
+        LOG.info("Discord webhook configured from properties file.");
     }
 
     private static void loadModules() {
