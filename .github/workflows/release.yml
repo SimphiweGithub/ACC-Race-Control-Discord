@@ -22,6 +22,10 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      - name: Create Gradle temp directory
+        run: New-Item -ItemType Directory -Force C:\T | Out-Null
+        shell: powershell
+
       - name: Build distribution
         run: ./gradlew :base:installDist --warning-mode=none
         shell: bash
