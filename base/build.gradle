@@ -53,6 +53,10 @@ dependencies {
     // Needed for com.google.api.client.json.jackson2.JacksonFactory
     implementation 'com.google.http-client:google-http-client-jackson2:1.42.3'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // Discord bot
+    implementation 'net.dv8tion:JDA:5.1.2'
+    implementation 'org.slf4j:slf4j-simple:2.0.9'
 }
 
 run {

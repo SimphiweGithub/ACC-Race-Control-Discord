@@ -7,7 +7,9 @@ package racecontrol;
 
 import racecontrol.utility.Version;
 import racecontrol.gui.RaceControlApplet;
-import racecontrol.client.DiscordF1Ticker;
+import racecontrol.discord.DiscordService;
+import racecontrol.discord.LiveBoardPublisher;
+import racecontrol.discord.RaceFeedPublisher;
 import racecontrol.persistance.PersistantConfig;
 import java.io.File;
 import java.io.FileInputStream;
@@ -62,8 +64,8 @@ public class Main {
         setupSplash();
         TimeUnit.SECONDS.sleep(2);
 
-        // Start Discord bot leaderboard ticker if configured
-        DiscordF1Ticker.start();
+        // Auto-start Discord bot if credentials were saved in a previous session
+        startDiscordIfConfigured();
 
         //Set system look and feel.
         try {
@@ -119,6 +121,23 @@ public class Main {
             LOG.log(Level.SEVERE, "Uncought exception:", e);
         }
 
+    }
+
+    private static void startDiscordIfConfigured() {
+        String token   = PersistantConfig.get(racecontrol.persistance.PersistantConfigKeys.DISCORD_BOT_TOKEN);
+        String guildStr = PersistantConfig.get(racecontrol.persistance.PersistantConfigKeys.DISCORD_GUILD_ID);
+        String chanStr  = PersistantConfig.get(racecontrol.persistance.PersistantConfigKeys.DISCORD_CHANNEL_ID);
+        if (token.isBlank() || guildStr.isBlank() || chanStr.isBlank()) return;
+        try {
+            long guildId   = Long.parseLong(guildStr);
+            long channelId = Long.parseLong(chanStr);
+            DiscordService.start(token, guildId, channelId);
+            RaceFeedPublisher.register();
+            LiveBoardPublisher.start();
+            LOG.info("Discord bot started from saved config.");
+        } catch (Exception e) {
+            LOG.log(java.util.logging.Level.WARNING, "Discord auto-start failed", e);
+        }
     }
 
     private static void configureDiscordFromProperties() {

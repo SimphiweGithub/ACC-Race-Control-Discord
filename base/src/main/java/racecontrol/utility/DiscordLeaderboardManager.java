@@ -165,91 +165,67 @@ public final class DiscordLeaderboardManager {
 
 public static String buildMessage(SessionMode mode, String trackName, List<LeaderboardEntry> entries) {
     StringBuilder sb = new StringBuilder();
-    String headerTitle = buildHeaderTitle(mode, trackName);
-    sb.append(headerTitle).append("\n\n");
-
-    sb.append("```").append('\n');
+    sb.append(buildHeaderTitle(mode, trackName)).append("\n\n");
+    sb.append("```\n");
 
     switch (mode) {
         case PRACTICE: {
-            String header = String.format(
-                    "%1$3s %-18s %-9s %-9s %-10s %-7s %-7s %-7s",
-                    "P", "Driver", "Last", "Best", "Gap", "S1", "S2", "S3");
-            sb.append(header).append('\n');
+            // Use only sequential specifiers \u2014 mixing %1$Ns with %-Ns causes arg[1] to be consumed twice
+            sb.append(String.format("%-3s %-18s %-9s %-9s %-10s %-7s %-7s %-7s\n",
+                    "P", "Driver", "Last", "Best", "Gap", "S1", "S2", "S3"));
             for (LeaderboardEntry e : entries) {
-                String gapStr = e.position == 1 ? "—" : formatGap(e.gap);
-                String row = String.format(
-                        "%1$3s %-18s %-9s %-9s %-10s %-7s %-7s %-7s",
-                        rightAlign(e.position, 2),
+                String gapStr = e.position == 1 ? "\u2014" : formatGap(e.gap);
+                sb.append(String.format("%3d %-18s %-9s %-9s %-10s %-7s %-7s %-7s\n",
+                        e.position,
                         monoTruncate(e.driverName, 18),
                         formatLap(e.lastLap),
                         formatLap(e.bestLap),
                         padWidth(gapStr, 10),
                         formatSector(e.sector1),
                         formatSector(e.sector2),
-                        formatSector(e.sector3));
-                sb.append(row).append('\n');
+                        formatSector(e.sector3)));
             }
             break;
         }
-        // In the QUALIFYING case of buildMessage method
-case QUALIFYING: {
-    String header = String.format(
-            "%1$3s %-18s %-9s %-9s %-10s",
-            "P", "Driver", "Last", "Best", "Gap");
-    sb.append(header).append('\n');
-    
-    // Find the best lap time to calculate gaps against
-    Duration bestLapTime = entries.stream()
-            .filter(e -> e.bestLap != null)
-            .map(e -> e.bestLap)
-            .min(Duration::compareTo)
-            .orElse(Duration.ZERO);
-    
-    for (LeaderboardEntry e : entries) {
-        String lastStr = e.lastLap == null ? "--:--.---" : formatLap(e.lastLap);
-        String bestLapStr = e.bestLap == null ? "--:--.---" : formatLap(e.bestLap);
-        
-        // Calculate gap to the best lap
-        String gapStr;
-        if (e.position == 1 || e.bestLap == null) {
-            gapStr = "—";
-        } else if (bestLapTime.isZero()) {
-            gapStr = "+?";
-        } else {
-            Duration gap = e.bestLap.minus(bestLapTime);
-            gapStr = formatGap(gap);
-        }
-        
-        String row = String.format(
-                "%1$3s %-18s %-9s %-9s %-10s",
-                rightAlign(e.position, 2),
-                monoTruncate(e.driverName, 18),
-                lastStr,
-                bestLapStr,
-                gapStr);
-        sb.append(row).append('\n');
-    }
-    break;
-}
-        case RACE: {
-            String header = String.format(
-                    "%1$3s %-18s %-9s %-9s %-10s %2$4s %3$4s",
-                    "P", "L", "P");
-            header = "P   Driver             Last      Best      Int        Laps Pits";
-            sb.append(header).append('\n');
+        case QUALIFYING: {
+            Duration bestLapTime = entries.stream()
+                    .filter(e -> e.bestLap != null)
+                    .map(e -> e.bestLap)
+                    .min(Duration::compareTo)
+                    .orElse(Duration.ZERO);
+
+            sb.append(String.format("%-3s %-18s %-9s %-9s %-10s\n",
+                    "P", "Driver", "Last", "Best", "Gap"));
             for (LeaderboardEntry e : entries) {
-                String intStr = e.position == 1 ? "—" : formatGap(e.gap);
-                String row = String.format(
-                        "%1$3s %-18s %-9s %-9s %-10s %2$4s %3$4s",
-                        rightAlign(e.position, 2),
+                String gapStr;
+                if (e.position == 1 || e.bestLap == null) {
+                    gapStr = "\u2014";
+                } else if (bestLapTime.isZero()) {
+                    gapStr = "+?";
+                } else {
+                    gapStr = formatGap(e.bestLap.minus(bestLapTime));
+                }
+                sb.append(String.format("%3d %-18s %-9s %-9s %-10s\n",
+                        e.position,
+                        monoTruncate(e.driverName, 18),
+                        formatLap(e.lastLap),
+                        formatLap(e.bestLap),
+                        gapStr));
+            }
+            break;
+        }
+        case RACE: {
+            sb.append("P   Driver             Last      Best      Int        Laps Pits\n");
+            for (LeaderboardEntry e : entries) {
+                String intStr = e.position == 1 ? "\u2014" : formatGap(e.gap);
+                sb.append(String.format("%3d %-18s %-9s %-9s %-10s %4s %4s\n",
+                        e.position,
                         monoTruncate(e.driverName, 18),
                         formatLap(e.lastLap),
                         formatLap(e.bestLap),
                         padWidth(intStr, 10),
                         rightAlign(e.laps, 4),
-                        rightAlign(e.pits, 4));
-                sb.append(row).append('\n');
+                        rightAlign(e.pits, 4)));
             }
             break;
         }
@@ -264,11 +240,12 @@ case QUALIFYING: {
 
     private static String buildHeaderTitle(SessionMode mode, String trackName) {
         String t = (trackName == null || trackName.isBlank()) ? "Unknown" : trackName;
+        // Use \u2014 (em dash) \u2014 literal "\u2014" compiles to mojibake under windows-1252 encoding
         switch (mode) {
-            case PRACTICE: return "Free Practice — " + t;
-            case QUALIFYING: return "Qualifying — " + t;
-            case RACE: return "Race — " + t;
-            default: return t;
+            case PRACTICE:   return "Free Practice \u2014 " + t;
+            case QUALIFYING: return "Qualifying \u2014 " + t;
+            case RACE:       return "Race \u2014 " + t;
+            default:         return t;
         }
     }
 

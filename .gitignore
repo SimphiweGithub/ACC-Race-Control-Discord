@@ -32,9 +32,14 @@ Monitor/build
 
 #ignore api credentials.
 credentials.json
+base/src/main/resources/discord.properties
+
+# Bundled JRE — populated locally, never commit (hundreds of MB)
+base/src/dist/jre/
 
 
 
 
 
 /base/build/
+/build/

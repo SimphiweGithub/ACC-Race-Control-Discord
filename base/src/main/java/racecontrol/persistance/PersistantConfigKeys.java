@@ -46,10 +46,17 @@ public interface PersistantConfigKeys {
     public Key<Boolean> CONTACT_CONFIG_HINT_INVALID = new Key<>(Boolean.class, true, "contactConfigHintInvalid");
 
     /**
-     * Discord leaderboard configuration
+     * Discord leaderboard configuration (legacy webhook keys, kept for compatibility)
      */
     public Key<Boolean> DISCORD_ENABLED = new Key<>(Boolean.class, false, "discordEnabled");
     public Key<String> DISCORD_WEBHOOK_URL = new Key<>(String.class, "", "discordWebhookUrl");
     public Key<Integer> DISCORD_UPDATE_INTERVAL = new Key<>(Integer.class, 30, "discordUpdateInterval");
+
+    /**
+     * Discord bot configuration
+     */
+    public Key<String> DISCORD_BOT_TOKEN    = new Key<>(String.class, "", "discordBotToken");
+    public Key<String> DISCORD_GUILD_ID     = new Key<>(String.class, "", "discordGuildId");
+    public Key<String> DISCORD_CHANNEL_ID   = new Key<>(String.class, "", "discordChannelId");
 
 }

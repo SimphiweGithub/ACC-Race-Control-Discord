@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2021 Leonard Schüngel
+ * Copyright (c) 2021 Leonard Schï¿½ngel
  *
  * For licensing information see the included license (LICENSE.txt)
  */
@@ -13,6 +13,7 @@ import static processing.core.PConstants.CENTER;
 import static processing.core.PConstants.LEFT;
 import racecontrol.Main;
 import racecontrol.gui.app.logging.LoggingPanel;
+import racecontrol.gui.app.discord.DiscordConfigController;
 import racecontrol.gui.app.racecontrol.RaceControlController;
 import racecontrol.client.AccConnection;
 import racecontrol.client.events.ConnectionClosedEvent;
@@ -75,6 +76,7 @@ public class AppController
                 || PersistantConfig.get(ENABLE_EXPERIMENTAL_FEATURES)) {
             pageControllers.add(new AutobroadcastController());
         }
+        pageControllers.add(new DiscordConfigController());
         pageControllers.add(new LoggingPanel());
         if (SHOW_DEBUG) {
             pageControllers.add(new TestPanel());
