@@ -36,13 +36,22 @@ jobs:
           $ver     = "${{ github.ref_name }}" -replace '^v', ''
           $distDir = (Get-ChildItem "base\build\install" -Directory | Select-Object -First 1).FullName
           $libDir  = "$distDir\lib"
-          $mainJar = (Get-ChildItem "$libDir\base-*.jar" | Select-Object -First 1).Name
+          # base*.jar covers both "base.jar" (no version set) and "base-1.5.8.jar"
+          $mainJar = (Get-ChildItem "$libDir" -Filter "base*.jar" | Select-Object -First 1).Name
 
           Write-Host "dist  : $distDir"
           Write-Host "jar   : $mainJar"
           Write-Host "ver   : $ver"
 
+          if (-not $mainJar) {
+            Write-Host "All jars in lib:"
+            Get-ChildItem "$libDir" -Filter "*.jar" | Select-Object -ExpandProperty Name
+            throw "Could not find main jar (base*.jar) in $libDir"
+          }
+
           # ── 1. Build a minimal JRE with jlink (used by the portable ZIP) ─────
+          # Remove any existing jre dir (may have been copied from src/dist by installDist)
+          Remove-Item -Recurse -Force "$distDir\jre" -ErrorAction SilentlyContinue
           Write-Host "`n[jlink] Building bundled JRE..."
           & jlink `
             --add-modules java.se,jdk.crypto.ec,jdk.unsupported,jdk.unsupported.desktop `
