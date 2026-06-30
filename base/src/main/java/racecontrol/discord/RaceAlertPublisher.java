@@ -11,10 +11,12 @@ import racecontrol.client.model.Model;
 import racecontrol.client.protocol.enums.SessionType;
 import racecontrol.utility.TimeUtils;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -46,6 +48,10 @@ public final class RaceAlertPublisher {
     private static final long BATTLE_GAP_MS = 1_000;
     /** Minimum time between alerts for the same pair (ms). */
     private static final long BATTLE_COOLDOWN_MS = 30_000;
+    /** Max battle alerts per 2-second tick — prevents rate-limit bursts. */
+    private static final int MAX_BATTLE_ALERTS_PER_TICK = 2;
+    /** Max pit-stop alerts per 2-second tick. */
+    private static final int MAX_PIT_ALERTS_PER_TICK = 2;
 
     // All state below is only touched from the single SCHEDULER thread.
     private static int     currentLeaderId = -1;
@@ -128,19 +134,25 @@ public final class RaceAlertPublisher {
 
     private static void checkBattles(DiscordService discord, List<Car> cars) {
         long now = System.currentTimeMillis();
-        for (Car car : cars) {
-            if (car.realtimePosition <= 1) continue;     // leader has no car ahead
-            if (car.isInPit()) continue;
 
-            int gap = car.gapPositionAhead;
-            if (gap <= 0 || gap == Integer.MAX_VALUE || gap >= BATTLE_GAP_MS) continue;
+        // Sort by closest gap first so the tightest battles fire before the cap is hit
+        List<Car> candidates = cars.stream()
+                .filter(c -> c.realtimePosition > 1 && !c.isInPit())
+                .filter(c -> c.gapPositionAhead > 0
+                          && c.gapPositionAhead != Integer.MAX_VALUE
+                          && c.gapPositionAhead < BATTLE_GAP_MS)
+                .sorted(Comparator.comparingInt(c -> c.gapPositionAhead))
+                .collect(Collectors.toList());
+
+        int fired = 0;
+        for (Car car : candidates) {
+            if (fired >= MAX_BATTLE_ALERTS_PER_TICK) break;
 
             Car ahead = cars.stream()
                     .filter(c -> c.realtimePosition == car.realtimePosition - 1)
                     .findFirst().orElse(null);
             if (ahead == null || ahead.isInPit()) continue;
 
-            // Stable key regardless of which car we encounter first
             String pairKey = Math.min(car.id, ahead.id) + "_" + Math.max(car.id, ahead.id);
             Long lastFire  = battleLastFire.get(pairKey);
             if (lastFire != null && (now - lastFire) < BATTLE_COOLDOWN_MS) continue;
@@ -149,13 +161,15 @@ public final class RaceAlertPublisher {
             discord.postFeed(String.format("**BATTLE** - %s (P%d) vs %s (P%d) - %.3fs",
                     car.getDriver().fullName(),   car.realtimePosition,
                     ahead.getDriver().fullName(), ahead.realtimePosition,
-                    gap / 1000.0));
+                    car.gapPositionAhead / 1000.0));
+            fired++;
         }
     }
 
     // ?? Pit stops ?????????????????????????????????????????????????????????????
 
     private static void checkPitStops(DiscordService discord, List<Car> cars, int sessionTimeMs) {
+        int fired = 0;
         for (Car car : cars) {
             int prev = pitCounts.getOrDefault(car.id, Integer.MIN_VALUE);
             int curr = car.pitlaneCount;
@@ -166,9 +180,12 @@ public final class RaceAlertPublisher {
             }
             if (curr > prev) {
                 pitCounts.put(car.id, curr);
-                String elapsed = TimeUtils.asDurationShort(sessionTimeMs);
-                discord.postFeed("**" + car.getDriver().fullName().toUpperCase()
-                        + "** pits (stop " + curr + " | " + elapsed + " elapsed)");
+                if (fired < MAX_PIT_ALERTS_PER_TICK) {
+                    String elapsed = TimeUtils.asDurationShort(sessionTimeMs);
+                    discord.postFeed("**" + car.getDriver().fullName().toUpperCase()
+                            + "** pits (stop " + curr + " | " + elapsed + " elapsed)");
+                    fired++;
+                }
             }
         }
     }

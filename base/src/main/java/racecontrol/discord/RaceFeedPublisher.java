@@ -32,6 +32,8 @@ public final class RaceFeedPublisher implements EventListener {
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private Integer sessionBestMs = null;
+    /** carId -> personal best lap time ms for this session. */
+    private final java.util.Map<Integer, Integer> personalBestMs = new java.util.HashMap<>();
 
     private RaceFeedPublisher() {}
 
@@ -103,7 +105,8 @@ public final class RaceFeedPublisher implements EventListener {
         int ms = lc.getLapTime();
         if (ms <= 0 || ms == Integer.MAX_VALUE) return;
 
-        String driverName = lc.getCar().getDriver().fullName();
+        Car car = lc.getCar();
+        String driverName = car.getDriver().fullName();
 
         // Session-best (fastest lap) alert
         if (sessionBestMs == null || ms < sessionBestMs) {
@@ -115,19 +118,26 @@ public final class RaceFeedPublisher implements EventListener {
                 .build());
         }
 
-        // Personal-best ping for followers
-        // (session best already covers P1 driver; followers get a ping on their driver's PB)
-        int pos = lc.getCar().realtimePosition;
-        List<String> followers = FollowStore.followersOf(driverName);
-        if (!followers.isEmpty()) {
-            String pings = followers.stream().map(id -> "<@" + id + ">").collect(Collectors.joining(" "));
-            discord.postFeed(pings + " **" + driverName + "** completed a lap: "
-                + TimeUtils.asLapTime(ms) + " (P" + pos + ")");
+        // Ping followers only when the driver sets a new personal best.
+        // Skips the very first lap (no previous time to beat yet).
+        Integer prevBest = personalBestMs.get(car.id);
+        if (prevBest == null || ms < prevBest) {
+            personalBestMs.put(car.id, ms);
+            if (prevBest != null) {
+                List<String> followers = FollowStore.followersOf(driverName);
+                if (!followers.isEmpty()) {
+                    String pings = followers.stream()
+                            .map(id -> "<@" + id + ">").collect(Collectors.joining(" "));
+                    discord.postFeed(pings + " **" + driverName + "** new personal best: "
+                            + TimeUtils.asLapTime(ms) + " (P" + car.realtimePosition + ")");
+                }
+            }
         }
     }
 
     private void handleSessionChange(DiscordService discord, SessionChangedEvent sc) {
         sessionBestMs = null;
+        personalBestMs.clear();
         discord.resetLiveBoard();
         String sessionType = sc.getSessionId().getType() != null
             ? sc.getSessionId().getType().name() : "SESSION";
