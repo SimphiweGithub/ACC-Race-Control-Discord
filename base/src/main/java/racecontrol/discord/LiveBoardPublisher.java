@@ -141,6 +141,7 @@ public final class LiveBoardPublisher {
     static List<Car> dedupedCars(java.util.Collection<Car> raw) {
         Map<Integer, Car> byId = new LinkedHashMap<>();
         for (Car c : raw) {
+            if (c.getDriver().fullName().isBlank()) continue;   // skip unnamed/spectator slots
             byId.merge(c.id, c, (a, b) -> {
                 boolean aValid = a.realtimePosition > 0;
                 boolean bValid = b.realtimePosition > 0;

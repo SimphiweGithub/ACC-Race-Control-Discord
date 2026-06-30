@@ -150,7 +150,7 @@ public final class RaceAlertPublisher {
             if (raceUnderway) checkOvertakes(discord, cars);
             if (raceUnderway) checkClosing(discord, cars);
             if (raceUnderway) checkSideBySide(discord, cars);
-            checkPitStops(discord, cars, sessionTimeMs);
+            if (raceUnderway) checkPitStops(discord, cars, sessionTimeMs);
             checkHalfway(discord, sessionTimeMs, sessionEndMs);
 
         } catch (Throwable t) {

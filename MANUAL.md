@@ -47,7 +47,7 @@ Everything below appears as a plain message or embed in the configured channel.
 | Battle building | `**CLOSING IN** - Leclerc is hunting down Russell - 1.4s and dropping (P4)` |
 | Wheel-to-wheel | `**SIDE BY SIDE** - Russell and Leclerc are wheel-to-wheel for P4 - 0.180s` |
 | Overtake | `**OVERTAKE** - Leclerc passes Russell for P4` |
-| Contact / incident | Embed — drivers involved and their positions |
+| Contact / incident | Embed — drivers involved and their positions (multi-car incidents coalesced into one embed) |
 | VSC deployed | Embed — speed limit |
 | VSC ending | `VSC ending - green flag` |
 | VSC violation | Driver name |
@@ -57,9 +57,9 @@ Everything below appears as a plain message or embed in the configured channel.
 | Bot online | `Race Control is online - /iam /follow /standings ...` |
 | Bot reconnected | `Race Control reconnected.` |
 
-Battle alerts (closing, side by side, overtake) only fire once the race leader
-has completed at least one lap, suppressing false positives during the formation
-lap and standing start.
+Battle alerts (closing, side by side, overtake) and pit stop alerts only fire
+once the race leader has completed at least one lap, suppressing false positives
+during the formation lap and standing start.
 
 ---
 
@@ -411,13 +411,7 @@ clean with only real race events.
 
 ### Known Quirks (not bugs)
 
-**Pit stop alerts fire at 00:00 elapsed on the grid**
-During the pre-race grid phase the session clock has not started, so the
-elapsed time shown is 00:00. These alerts fire because pit counts from
-qualifying carry over into the race session before the first lap is complete.
-They are cosmetic noise and stop once the race is underway.
-
-**No battle or overtake alerts in the first lap**
+**No battle, overtake, or pit stop alerts in the first lap**
 This is intentional. All three battle triggers (CLOSING IN, SIDE BY SIDE,
 OVERTAKE) are suppressed until the race leader completes at least one lap.
 The formation lap and standing start cause ACC to shuffle positions in ways

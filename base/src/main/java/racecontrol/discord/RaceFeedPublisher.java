@@ -22,8 +22,12 @@ import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -57,6 +61,18 @@ public final class RaceFeedPublisher implements EventListener {
     private String      lastAnnouncedSessionKey = "";
     /** Type of the previous session — used to detect when a race finishes. */
     private SessionType lastSessionType         = null;
+
+    // Contact coalescing — merges all ContactEvents within a 3-second window
+    // into one embed so T1 pile-ups don't flood the feed.
+    private final ScheduledExecutorService contactFlusher =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "discord-contact-flush");
+                t.setDaemon(true);
+                return t;
+            });
+    private final List<ContactInfo> pendingContacts  = new ArrayList<>();
+    private final Object            contactLock      = new Object();
+    private       boolean           contactFlushScheduled = false;
 
     private RaceFeedPublisher() {}
 
@@ -101,20 +117,60 @@ public final class RaceFeedPublisher implements EventListener {
     }
 
     private void handleContact(DiscordService discord, ContactInfo info) {
-        List<Car> cars = info.getCars();
-        String involved = cars.stream()
-            .map(c -> c.getDriver().fullName() + " (P" + c.realtimePosition + ")")
-            .collect(Collectors.joining(" vs "));
+        // Buffer the event; the flush fires 3 seconds later and posts ONE coalesced
+        // embed for the whole incident window (handles T1 pile-ups without flooding).
+        synchronized (contactLock) {
+            pendingContacts.add(info);
+            if (!contactFlushScheduled) {
+                contactFlushScheduled = true;
+                contactFlusher.schedule(this::flushContacts, 3, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    /**
+     * Posts a single contact embed for all buffered ContactEvents.
+     * Cars are deduplicated by id so a car appearing in multiple events
+     * is listed only once.
+     */
+    private void flushContacts() {
+        List<ContactInfo> snapshot;
+        synchronized (contactLock) {
+            if (pendingContacts.isEmpty()) {
+                contactFlushScheduled = false;
+                return;
+            }
+            snapshot = new ArrayList<>(pendingContacts);
+            pendingContacts.clear();
+            contactFlushScheduled = false;
+        }
+
+        DiscordService discord = DiscordService.get();
+        if (discord == null) return;
+
+        // Merge all cars, deduplicating by car id (insertion order kept).
+        Map<Integer, Car> involvedMap = new LinkedHashMap<>();
+        for (ContactInfo ci : snapshot) {
+            for (Car c : ci.getCars()) {
+                involvedMap.putIfAbsent(c.id, c);
+            }
+        }
+
+        List<Car> involved = new ArrayList<>(involvedMap.values());
+        String description = involved.isEmpty()
+                ? "Incident detected"
+                : involved.stream()
+                          .map(c -> c.getDriver().fullName() + " (P" + c.realtimePosition + ")")
+                          .collect(Collectors.joining(" | "));
 
         EmbedBuilder embed = new EmbedBuilder()
-            .setTitle("Contact")
-            .setDescription(involved.isEmpty() ? "Incident detected" : involved)
-            .setColor(new Color(0xE74C3C));
-
+                .setTitle(involved.size() > 2 ? "Multi-car contact" : "Contact")
+                .setDescription(description)
+                .setColor(new Color(0xE74C3C));
         discord.postFeedEmbed(embed.build());
 
-        // DM each follower privately — contact alerts stay out of the channel
-        for (Car car : cars) {
+        // DM followers for each car involved.
+        for (Car car : involved) {
             String name = car.getDriver().fullName();
             String msg  = "**" + name + "** was involved in a contact (P" + car.realtimePosition + ")";
             for (String userId : FollowStore.followersOf(name)) {
@@ -130,15 +186,21 @@ public final class RaceFeedPublisher implements EventListener {
         Car car = lc.getCar();
         String driverName = car.getDriver().fullName();
 
-        // Session-best (fastest lap) alert
+        // Session-best (fastest lap) alert.
+        // Suppress the embed on the very first recorded lap — no prior reference
+        // exists, so formation laps and out-laps would fire a spurious announcement.
+        // Every genuine improvement after the baseline is set is worth posting.
         if (sessionBestMs == null || ms < sessionBestMs) {
+            boolean firstLap  = (sessionBestMs == null);
             sessionBestMs     = ms;
             sessionBestDriver = driverName;
-            discord.postFeedEmbed(new EmbedBuilder()
-                .setTitle("Fastest Lap")
-                .setDescription("**" + driverName + "**  " + TimeUtils.asLapTime(ms))
-                .setColor(new Color(0x9B59B6))
-                .build());
+            if (!firstLap) {
+                discord.postFeedEmbed(new EmbedBuilder()
+                    .setTitle("Fastest Lap")
+                    .setDescription("**" + driverName + "**  " + TimeUtils.asLapTime(ms))
+                    .setColor(new Color(0x9B59B6))
+                    .build());
+            }
         }
 
         // DM followers when the driver sets a new personal best.
@@ -187,6 +249,10 @@ public final class RaceFeedPublisher implements EventListener {
         sessionBestDriver = null;
         personalBestMs.clear();
         pbPingLastFire.clear();
+        synchronized (contactLock) {
+            pendingContacts.clear();
+            // If a flush is already queued it will fire, find nothing, and reset itself.
+        }
         discord.resetLiveBoard();
         String sessionType = sid.getType() != null
             ? sid.getType().name() : "SESSION";
