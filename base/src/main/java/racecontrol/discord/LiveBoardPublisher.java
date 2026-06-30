@@ -73,9 +73,10 @@ public final class LiveBoardPublisher {
             if (hashStr.equals(lastContentHash)) return;
             lastContentHash = hashStr;
 
-            // Truncate if over 2000 chars
+            // Truncate if over 2000 chars — cut at the last complete row so the
+            // closing ``` is never lost (losing it breaks Discord's code-block rendering).
             if (content.length() > 1990) {
-                content = content.substring(0, 1987) + "...";
+                content = truncateLeaderboard(content, 1990);
             }
 
             discord.updateLiveBoard(content);
@@ -116,6 +117,19 @@ public final class LiveBoardPublisher {
     private static Duration splitMs(List<Integer> splits, int idx) {
         if (splits == null || splits.size() <= idx) return null;
         return ms(splits.get(idx));
+    }
+
+    /**
+     * Truncate a leaderboard message to {@code limit} characters while always
+     * keeping the closing {@code ```} so Discord renders the code block correctly.
+     * Cuts at the last complete row boundary before the limit.
+     */
+    static String truncateLeaderboard(String content, int limit) {
+        // Reserve enough room for the "...\n```" suffix (7 chars)
+        int searchUpTo = limit - 7;
+        int cutAt = content.lastIndexOf('\n', searchUpTo);
+        if (cutAt < 0) cutAt = searchUpTo;
+        return content.substring(0, cutAt) + "\n...\n```";
     }
 
     /**

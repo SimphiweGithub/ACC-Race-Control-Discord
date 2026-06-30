@@ -70,9 +70,9 @@ public final class DiscordCommandListener extends ListenerAdapter {
         List<LeaderboardEntry> rows = buildRows(cars, mode);
         String content = DiscordLeaderboardManager.buildMessage(mode, track, rows);
 
-        // Truncate if needed (Discord ephemeral reply limit is 2000 chars)
+        // Truncate if needed — preserve closing ``` so the code block renders
         if (content.length() > 1990) {
-            content = content.substring(0, 1987) + "...";
+            content = LiveBoardPublisher.truncateLeaderboard(content, 1990);
         }
         event.reply(content).setEphemeral(true).queue();
     }
