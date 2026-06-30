@@ -95,8 +95,17 @@ public final class RaceAlertPublisher {
             int sessionEndMs  = model.session.raw.getSessionEndTime();
             List<Car> cars    = LiveBoardPublisher.dedupedCars(model.getCars());
 
+            // Don't fire any alerts until the race leader has completed at least
+            // 1 lap. This suppresses the grid-spacing false positives that fire
+            // during the session transition and formation/standing start.
+            boolean raceUnderway = cars.stream()
+                    .filter(c -> c.realtimePosition == 1)
+                    .findFirst()
+                    .map(c -> c.lapCount >= 1)
+                    .orElse(false);
+
             checkLeadChange(discord, cars, sessionTimeMs);
-            checkBattles(discord, cars);
+            if (raceUnderway) checkBattles(discord, cars);
             checkPitStops(discord, cars, sessionTimeMs);
             checkHalfway(discord, sessionTimeMs, sessionEndMs);
 
