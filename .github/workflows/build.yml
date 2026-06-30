@@ -1,9 +1,8 @@
-name: Build & Release
+name: CI Build
 
 on:
   push:
     branches: [ main ]
-    tags:     [ 'v*' ]
   pull_request:
     branches: [ main ]
 
@@ -14,30 +13,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 25
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '25'
+          java-version: '21'
           distribution: 'temurin'
           cache: gradle
 
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Build release ZIP
-        run: ./gradlew :base:buildRelease
+      - name: Build
+        run: ./gradlew :base:installDist --warning-mode=none
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: acc-race-control-dist
-          path: base/build/release/*.zip
-          retention-days: 30
-
-      # Only create a GitHub Release when a version tag is pushed (e.g. v1.5.8)
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: base/build/release/*.zip
-          generate_release_notes: true
+          path: base/build/install/
+          retention-days: 7
