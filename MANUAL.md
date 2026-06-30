@@ -301,9 +301,16 @@ bot was invited with the `applications.commands` scope (see Setup section).
 
 **Leaderboard posts but is not pinned**
 
-The bot is missing the **Manage Messages** permission in that channel. Update
-the bot's role permissions or the channel's permission overrides in Discord's
-Server Settings.
+Discord splits pinning into two separate permissions. The bot needs **both**:
+
+- **Manage Messages** — to delete/remove messages
+- **Pin Messages** — to actually pin or unpin (a separate toggle in newer Discord)
+
+Grant both in the channel's Permissions tab (right-click channel → Edit Channel
+→ Permissions). After granting Pin Messages, **delete the leaderboard message**
+so the bot recreates and pins it on the next 5-second tick. If you only grant
+the permission without deleting, the bot already has a message ID and will keep
+editing it in place — the pin attempt only runs on creation.
 
 **No alerts firing during the race**
 
@@ -327,6 +334,131 @@ username path issue; it does not affect the distributed EXE).
 
 Open Settings → Discord in Race Control, update the fields, and click
 Connect again. The old connection is closed and a new one is established.
+
+---
+
+## Tips & Tricks
+
+### Operator
+
+**Test with a practice session before race night**
+Connect Race Control during a practice or qualifying session and run through
+`/standings`, `/gap`, `/pace`, and `/iam`. This confirms the bot can see live
+data before the league night starts, without the pressure of a live race.
+
+**Use /standings as your health check**
+If you are unsure whether the bot is seeing ACC data, `/standings` is the
+fastest way to confirm. A "Not connected" reply means Race Control has lost
+the ACC session; a live grid reply means everything is working.
+
+**Mute before the formation lap, unmute when the lights go out**
+Pre-race chatter (session start message, any leftover state) can clutter the
+channel. Use `/quiet mute:true` while the grid forms and `/quiet mute:false`
+the moment the race starts. The "feed is active again" message acts as a
+natural race-start signal for spectators watching the channel.
+
+**Admin commands work from any channel**
+`/quiet` does not need to be typed in the race channel. Use it from a private
+or admin channel so it does not draw attention mid-race.
+
+**Don't share your screen on the Settings panel**
+The Bot Token is displayed in plain text in the Settings → Discord panel.
+Avoid sharing your screen while that panel is open. If the token is ever
+exposed, reset it immediately in the Discord Developer Portal (Bot tab →
+Reset Token) and update Race Control with the new one.
+
+**Force a leaderboard re-pin after changing permissions**
+The pin attempt only runs when the board message is first created. If you
+grant Pin Messages after the board is already posted, delete the message —
+the bot recreates and pins it within 5 seconds.
+
+**Re-tell spectators to /follow after a restart**
+`/iam` claims survive restarts (saved to `data/iam.json`). `/follow`
+subscriptions do not — they reset when Race Control closes. Remind spectators
+to re-run `/follow` if the app was restarted between sessions.
+
+---
+
+### Spectators
+
+**Use both /iam and /follow for maximum coverage**
+They do different things and do not overlap:
+- `/iam` → receive a **personal recap DM** at race end (set once, lasts forever)
+- `/follow` → receive a **live DM** mid-race when your driver has a contact or
+  sets a new personal best (resets on app restart)
+
+Run both before the race starts.
+
+**You can follow multiple drivers**
+Use `/follow` more than once with different names — each call adds to your
+subscription list. Use `/following` to see everyone you are tracking.
+
+**Autocomplete only works during an active session**
+Driver name autocomplete pulls from the live ACC car list. If no session is
+running you will need to type the name in full. Wait until Race Control is
+connected before running `/iam` or `/follow`.
+
+**You only need /iam once**
+Your claim is stored permanently. Unless your ACC driver name changes between
+seasons (or you join a new team with a different name), you do not need to
+re-run it.
+
+**Ephemeral replies keep the channel clean**
+All command replies are private — only you see them. The channel feed stays
+clean with only real race events.
+
+---
+
+### Known Quirks (not bugs)
+
+**Pit stop alerts fire at 00:00 elapsed on the grid**
+During the pre-race grid phase the session clock has not started, so the
+elapsed time shown is 00:00. These alerts fire because pit counts from
+qualifying carry over into the race session before the first lap is complete.
+They are cosmetic noise and stop once the race is underway.
+
+**No battle or overtake alerts in the first lap**
+This is intentional. All three battle triggers (CLOSING IN, SIDE BY SIDE,
+OVERTAKE) are suppressed until the race leader completes at least one lap.
+The formation lap and standing start cause ACC to shuffle positions in ways
+that would generate dozens of false positives. Expect the first alerts around
+lap 2 onward.
+
+**CLOSING IN will not repeat for the same pair for 90 seconds**
+One update per chase phase is the design. If a car is hunting down another
+for several laps the channel gets one "hunting down" message, then silence
+until they are either through or have dropped back and re-closed. The SIDE BY
+SIDE and OVERTAKE alerts are not affected by this cooldown.
+
+**SIDE BY SIDE needs about 4 seconds of sustained proximity**
+The alert requires two consecutive 2-second ticks both under 0.3s gap. A
+one-frame GPS blip at 0.2s will not trigger it. If a pass happens very quickly
+you may only see OVERTAKE without a preceding SIDE BY SIDE — that is correct.
+
+**Passes from someone else pitting do not count as overtakes**
+If Hamilton pits and you inherit P4, that position gain does not register as an
+OVERTAKE and does not count toward the "Most Overtakes" stat in the recap. Only
+on-track position swaps between two cars both running (not in the pit lane) are
+counted. This is intentional — pit-window position shuffles are not passes.
+
+**Two cars at the same position in the leaderboard**
+Occasionally two cars briefly share the same race position during a pit
+transition (both are in the pits simultaneously and ACC has not yet resolved
+the order). This appears as duplicate position numbers in the leaderboard for
+a few seconds. It resolves itself on the next update and does not affect alerts.
+
+**Biggest Mover may be absent or slightly off**
+The grid position snapshot is taken the instant the RACE session is announced
+by ACC. If ACC takes a moment to publish grid positions (common on some
+servers), some cars may have position 0 at snapshot time and are excluded from
+the biggest-mover calculation. The field is simply omitted from the recap
+embed if there is no valid data — it will not show wrong information.
+
+**Race Recap fields only appear when data exists**
+If no on-track overtakes were detected, the "Most Overtakes" field does not
+appear in the recap embed. Same for Fastest Lap if no lap was completed, or
+Biggest Mover if the grid snapshot was empty. A minimal recap with only the
+podium is still posted.
 
 ---
 
