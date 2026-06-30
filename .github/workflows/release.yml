@@ -71,26 +71,31 @@ jobs:
           Write-Host "[zip] Done: $zipFolder.zip ($([math]::Round((Get-Item "$zipFolder.zip").Length/1MB,1)) MB)"
 
           # ── 3. Installer EXE via jpackage ─────────────────────────────────────
-          # jpackage bundles its own JRE; copy data/ into lib/ so it lands at $APPDIR/data
-          Copy-Item -Recurse -Force "$distDir\data" "$libDir\data"
+          # IMPORTANT: do NOT copy data/ into libDir.
+          # jpackage puts --input files into the app\ subdirectory ($APPDIR),
+          # but Processing looks for data\ relative to the working directory (install root).
+          # --app-content places directories at the install ROOT, matching what Processing expects.
           New-Item -ItemType Directory -Force installer | Out-Null
 
           Write-Host "`n[jpackage] Building installer..."
           $jpArgs = @(
-            "--type",         "exe",
-            "--name",         "ACC-Race-Control-Discord",
-            "--app-version",  $ver,
-            "--description",  "ACC Race Control - Discord spectator bot for ACC",
-            "--vendor",       "ACC Race Control",
-            "--input",        $libDir,
-            "--main-jar",     $mainJar,
-            "--main-class",   "racecontrol.Main",
-            "--java-options", '-splash:$APPDIR/data/loading.png',
-            "--icon",         "favicon\favicon.ico",
+            "--type",             "exe",
+            "--name",             "ACC-Race-Control-Discord",
+            "--app-version",      $ver,
+            "--description",      "ACC Race Control - Discord spectator bot for ACC",
+            "--vendor",           "ACC Race Control",
+            "--input",            $libDir,
+            "--main-jar",         $mainJar,
+            "--main-class",       "racecontrol.Main",
+            "--java-options",     '-splash:data/loading.png',  # relative to install root (working dir)
+            "--app-content",      "$distDir\data",             # → <install>\data\  (Processing data dir)
+            "--app-content",      "$distDir\log",              # → <install>\log\   (pre-create log dir)
+            "--icon",             "favicon\favicon.ico",
             "--win-dir-chooser",
             "--win-shortcut",
             "--win-menu",
-            "--dest",         "installer"
+            "--win-per-user-install",  # install to %LOCALAPPDATA% — user can write logs + config
+            "--dest",             "installer"
           )
           & jpackage @jpArgs
           if ($LASTEXITCODE -ne 0) { throw "jpackage failed with code $LASTEXITCODE" }
