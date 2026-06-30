@@ -1,4 +1,4 @@
-name: Release
+name: Build & Release
 
 on:
   push:
@@ -8,111 +8,25 @@ on:
 jobs:
   release:
     runs-on: windows-latest
-
     permissions:
-      contents: write   # required to create GitHub Releases
+      contents: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 25
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '25'
+          java-version: '21'
           distribution: 'temurin'
 
-      - name: Create Gradle temp directory
-        run: New-Item -ItemType Directory -Force C:\T | Out-Null
-        shell: powershell
+      - name: Build release ZIP
+        run: .\gradlew.bat :base:buildRelease
+        shell: pwsh
 
-      - name: Build distribution
-        run: ./gradlew :base:installDist --warning-mode=none
-        shell: bash
-
-      - name: Package — installer EXE + portable ZIP
-        shell: powershell
-        run: |
-          $ver     = "${{ github.ref_name }}" -replace '^v', ''
-          $distDir = (Get-ChildItem "base\build\install" -Directory | Select-Object -First 1).FullName
-          $libDir  = "$distDir\lib"
-          # base*.jar covers both "base.jar" (no version set) and "base-1.5.8.jar"
-          $mainJar = (Get-ChildItem "$libDir" -Filter "base*.jar" | Select-Object -First 1).Name
-
-          Write-Host "dist  : $distDir"
-          Write-Host "jar   : $mainJar"
-          Write-Host "ver   : $ver"
-
-          if (-not $mainJar) {
-            Write-Host "All jars in lib:"
-            Get-ChildItem "$libDir" -Filter "*.jar" | Select-Object -ExpandProperty Name
-            throw "Could not find main jar (base*.jar) in $libDir"
-          }
-
-          # ── 1. Build a minimal JRE with jlink (used by the portable ZIP) ─────
-          # Remove any existing jre dir (may have been copied from src/dist by installDist)
-          Remove-Item -Recurse -Force "$distDir\jre" -ErrorAction SilentlyContinue
-          Write-Host "`n[jlink] Building bundled JRE..."
-          & jlink `
-            --add-modules java.se,jdk.crypto.ec,jdk.unsupported,jdk.unsupported.desktop `
-            --output "$distDir\jre" `
-            --no-header-files `
-            --no-man-pages `
-            --compress=zip-6
-          if ($LASTEXITCODE -ne 0) { throw "jlink failed with code $LASTEXITCODE" }
-
-          # ── 2. Portable ZIP ───────────────────────────────────────────────────
-          # Copy dist to a cleanly named folder so the ZIP root has a good name
-          $zipFolder = "ACC-Race-Control-Discord-$ver"
-          Write-Host "`n[zip] Staging to $zipFolder ..."
-          Copy-Item -Recurse -Force $distDir $zipFolder
-          Compress-Archive -Path $zipFolder -DestinationPath "$zipFolder.zip"
-          Remove-Item -Recurse -Force $zipFolder
-          Write-Host "[zip] Done: $zipFolder.zip ($([math]::Round((Get-Item "$zipFolder.zip").Length/1MB,1)) MB)"
-
-          # ── 3. Installer EXE via jpackage ─────────────────────────────────────
-          # jpackage splits paths containing spaces when passed via --app-content,
-          # even when quoted. Stage everything it needs into a short no-spaces path.
-          $pkg = "D:\jp"
-          New-Item -ItemType Directory -Force $pkg | Out-Null
-          Copy-Item -Recurse -Force "$distDir\lib"  "$pkg\lib"
-          Copy-Item -Recurse -Force "$distDir\data" "$pkg\data"
-          Copy-Item -Recurse -Force "$distDir\log"  "$pkg\log"
-          $pkgLib  = "$pkg\lib"
-          $pkgMain = (Get-ChildItem "$pkgLib\base*.jar" | Select-Object -First 1).Name
-
-          New-Item -ItemType Directory -Force installer | Out-Null
-
-          Write-Host "`n[jpackage] Building installer..."
-          $jpArgs = @(
-            "--type",             "exe",
-            "--name",             "ACC-Race-Control-Discord",
-            "--app-version",      $ver,
-            "--description",      "ACC Race Control - Discord spectator bot for ACC",
-            "--vendor",           "ACC Race Control",
-            "--input",            $pkgLib,
-            "--main-jar",         $pkgMain,
-            "--main-class",       "racecontrol.Main",
-            "--java-options",     '-splash:data/loading.png',  # relative to install root (working dir)
-            "--app-content",      "$pkg\data",                 # → <install>\data\  (Processing data dir)
-            "--app-content",      "$pkg\log",                  # → <install>\log\   (pre-create log dir)
-            "--icon",             "favicon\favicon.ico",
-            "--win-dir-chooser",
-            "--win-shortcut",
-            "--win-menu",
-            "--win-per-user-install",  # install to %LOCALAPPDATA% — user can write logs + config
-            "--dest",             "installer"
-          )
-          & jpackage @jpArgs
-          if ($LASTEXITCODE -ne 0) { throw "jpackage failed with code $LASTEXITCODE" }
-
-          Write-Host "`n[jpackage] Done:"
-          Get-ChildItem installer | Format-Table Name, Length -AutoSize
-
-      - name: Create GitHub Release
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            ACC-Race-Control-Discord-*.zip
-            installer/*.exe
+          files: base/build/release/*.zip
           generate_release_notes: true
