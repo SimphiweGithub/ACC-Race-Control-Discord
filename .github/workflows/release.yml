@@ -21,28 +21,94 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Build release ZIP
-        run: .\gradlew.bat :base:buildRelease
+      - name: Create Gradle temp directory
+        run: New-Item -ItemType Directory -Force C:\T | Out-Null
         shell: pwsh
 
-      - name: Rename artifact
-        id: artifact
+      - name: Build distribution
+        run: .\gradlew.bat :base:installDist --warning-mode=none
+        shell: pwsh
+
+      - name: Package — installer EXE + portable ZIP
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^v', ''
-          $src = Get-ChildItem "base/build/release/*.zip" | Select-Object -First 1
-          $dest = "base/build/release/ACC-Race-Control-Discord-$version.zip"
-          Rename-Item $src.FullName $dest
-          echo "path=$dest" >> $env:GITHUB_OUTPUT
+          $ver     = "${{ github.ref_name }}" -replace '^v', ''
+          $distDir = (Get-ChildItem "base\build\install" -Directory | Select-Object -First 1).FullName
+          $libDir  = "$distDir\lib"
+          $mainJar = (Get-ChildItem "$libDir" -Filter "base*.jar" | Select-Object -First 1).Name
+
+          Write-Host "dist  : $distDir"
+          Write-Host "jar   : $mainJar"
+          Write-Host "ver   : $ver"
+
+          if (-not $mainJar) {
+            Get-ChildItem "$libDir" -Filter "*.jar" | Select-Object -ExpandProperty Name
+            throw "Could not find main jar (base*.jar) in $libDir"
+          }
+
+          # 1. Build a minimal JRE with jlink
+          Remove-Item -Recurse -Force "$distDir\jre" -ErrorAction SilentlyContinue
+          Write-Host "[jlink] Building bundled JRE..."
+          & jlink `
+            --add-modules java.se,jdk.crypto.ec,jdk.unsupported,jdk.unsupported.desktop `
+            --output "$distDir\jre" `
+            --no-header-files `
+            --no-man-pages `
+            --compress=2
+          if ($LASTEXITCODE -ne 0) { throw "jlink failed with code $LASTEXITCODE" }
+
+          # 2. Portable ZIP
+          $zipName = "ACC-Race-Control-Discord-$ver"
+          Write-Host "[zip] Staging to $zipName ..."
+          Copy-Item -Recurse -Force $distDir $zipName
+          Compress-Archive -Path $zipName -DestinationPath "$zipName.zip"
+          Remove-Item -Recurse -Force $zipName
+          Write-Host "[zip] Done: $zipName.zip"
+
+          # 3. EXE installer via jpackage
+          $pkg = "D:\jp"
+          New-Item -ItemType Directory -Force $pkg | Out-Null
+          Copy-Item -Recurse -Force "$distDir\lib"  "$pkg\lib"
+          Copy-Item -Recurse -Force "$distDir\data" "$pkg\data"
+          # Pre-create log dir so the app can write logs on first run
+          New-Item -ItemType Directory -Force "$pkg\log" | Out-Null
+          $pkgMain = (Get-ChildItem "$pkg\lib\base*.jar" | Select-Object -First 1).Name
+
+          New-Item -ItemType Directory -Force installer | Out-Null
+          Write-Host "[jpackage] Building installer..."
+          & jpackage `
+            --type             exe `
+            --name             "ACC-Race-Control-Discord" `
+            --app-version      $ver `
+            --description      "ACC Race Control - Discord spectator bot" `
+            --vendor           "ACC Race Control" `
+            --input            "$pkg\lib" `
+            --main-jar         $pkgMain `
+            --main-class       "racecontrol.Main" `
+            --java-options     "-splash:data/loading.png" `
+            --app-content      "$pkg\data" `
+            --app-content      "$pkg\log" `
+            --icon             "favicon\favicon.ico" `
+            --win-dir-chooser `
+            --win-shortcut `
+            --win-menu `
+            --win-per-user-install `
+            --dest             installer
+          if ($LASTEXITCODE -ne 0) { throw "jpackage failed with code $LASTEXITCODE" }
+          Write-Host "[jpackage] Done:"
+          Get-ChildItem installer | Format-Table Name, Length -AutoSize
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.artifact.outputs.path }}
+          files: |
+            ACC-Race-Control-Discord-*.zip
+            installer/*.exe
           generate_release_notes: false
           body: |
             ## ACC Race Control ${{ github.ref_name }}
 
-            **Download:** `ACC-Race-Control-Discord-${{ github.ref_name }}.zip`
-
-            Extract the ZIP and run `Start.bat` to launch.
+            | File | Description |
+            |---|---|
+            | `ACC-Race-Control-Discord-${{ github.ref_name }}.exe` | Windows installer — recommended for most users |
+            | `ACC-Race-Control-Discord-${{ github.ref_name }}.zip` | Portable ZIP — extract and run `Start.bat` |
