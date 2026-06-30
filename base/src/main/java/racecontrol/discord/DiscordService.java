@@ -26,7 +26,12 @@ public final class DiscordService {
      * different channels.
      */
     private final long boardChannelId;
-    private volatile String liveBoardMessageId;
+    private volatile String  liveBoardMessageId = null;
+    /**
+     * True while an async pin-retrieval + message-creation is in flight.
+     * Prevents the 5-second tick from firing multiple creation attempts in parallel.
+     */
+    private volatile boolean boardRecovering    = false;
 
     private DiscordService(JDA jda, long feedChannelId, long boardChannelId) {
         this.jda           = jda;
@@ -132,8 +137,15 @@ public final class DiscordService {
     /**
      * Edit the live board message in place.
      * Uses the dedicated board channel when configured; otherwise falls back to the
-     * feed channel. Creates and pins the message on first call; re-creates it if
-     * the message was deleted.
+     * feed channel.
+     *
+     * On first call (or after a session reset / app restart), the method:
+     *   1. Retrieves pinned messages in the board channel.
+     *   2. Unpins any stale live-board messages left by previous sessions or restarts
+     *      so only ONE pinned message exists at any time.
+     *   3. Creates a fresh message and pins it.
+     *
+     * If the message is manually deleted it is automatically recreated on the next tick.
      */
     public void updateLiveBoard(String content) {
         long targetChannelId = boardChannelId > 0 ? boardChannelId : feedChannelId;
@@ -141,27 +153,57 @@ public final class DiscordService {
         if (ch == null) return;
 
         if (liveBoardMessageId == null) {
-            ch.sendMessage(content).queue(m -> {
-                liveBoardMessageId = m.getId();
-                m.pin().queue(null, err -> LOG.log(Level.FINE, "Pin failed (needs Manage Messages perm)", err));
-            });
-        } else {
-            ch.editMessageById(liveBoardMessageId, content).queue(
-                null,
+            if (boardRecovering) return;  // creation already in flight — wait for next tick
+            boardRecovering = true;
+
+            // Unpin any stale board from a previous session / restart, then post fresh.
+            ch.retrievePinnedMessages().queue(
+                pins -> {
+                    for (net.dv8tion.jda.api.entities.Message pin : pins) {
+                        if (pin.getAuthor().getIdLong() == jda.getSelfUser().getIdLong()) {
+                            ch.unpinMessageById(pin.getId()).queue(
+                                null, e -> LOG.log(Level.FINE, "Unpin stale board failed", e));
+                        }
+                    }
+                    sendAndPinBoard(ch, content);
+                },
                 err -> {
-                    liveBoardMessageId = null;
-                    ch.sendMessage(content).queue(m -> {
-                        liveBoardMessageId = m.getId();
-                        m.pin().queue(null, pinErr -> LOG.log(Level.FINE, "Pin failed", pinErr));
-                    });
+                    // Can't read pins (no Manage Messages perm) — just create without cleanup
+                    LOG.log(Level.FINE, "Could not retrieve pins for board cleanup", err);
+                    sendAndPinBoard(ch, content);
                 }
             );
+            return;
         }
+
+        // Normal path: edit the existing message in place.
+        ch.editMessageById(liveBoardMessageId, content).queue(
+            null,
+            err -> {
+                // Message was deleted — recreate on next tick
+                liveBoardMessageId = null;
+            }
+        );
     }
 
-    /** Call on session change so the next session gets a fresh board message. */
+    private void sendAndPinBoard(TextChannel ch, String content) {
+        ch.sendMessage(content).queue(
+            m -> {
+                liveBoardMessageId = m.getId();
+                boardRecovering    = false;
+                m.pin().queue(null, e -> LOG.log(Level.FINE, "Pin failed (needs Manage Messages perm)", e));
+            },
+            e -> {
+                boardRecovering = false;
+                LOG.log(Level.FINE, "Board send failed", e);
+            }
+        );
+    }
+
+    /** Call on session change so the next session gets a fresh pinned board message. */
     public void resetLiveBoard() {
         liveBoardMessageId = null;
+        boardRecovering    = false;
     }
 
     /**
