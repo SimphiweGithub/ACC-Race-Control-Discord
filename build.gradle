@@ -7,9 +7,7 @@ allprojects {
 
 subprojects {
     apply plugin: 'java'
-    java {
-        toolchain {
-            languageVersion = JavaLanguageVersion.of(25)
-        }
-    }
+    // No toolchain block — sourceCompatibility/targetCompatibility in
+    // base/build.gradle (Java 17) is sufficient. Gradle uses whatever
+    // JDK is on the machine (25 locally, 21 on CI).
 }
