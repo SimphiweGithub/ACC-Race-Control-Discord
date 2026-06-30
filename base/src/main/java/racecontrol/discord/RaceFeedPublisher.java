@@ -5,6 +5,7 @@ import net.dv8tion.jda.api.EmbedBuilder;
 import racecontrol.client.AccBroadcastingClient;
 import racecontrol.client.events.SessionChangedEvent;
 import racecontrol.client.model.Model;
+import racecontrol.client.protocol.SessionId;
 import racecontrol.client.extension.contact.ContactEvent;
 import racecontrol.client.extension.contact.ContactInfo;
 import racecontrol.client.extension.laptimes.LapCompletedEvent;
@@ -110,9 +111,13 @@ public final class RaceFeedPublisher implements EventListener {
                     ()  -> discord.postFeed("VSC violation (car id " + vv.getCarId() + ")")
                 );
         } else if (e instanceof LapCompletedEvent lc) {
+            // Fallback: if the SessionChangedEvent was missed during a brief ACC
+            // connectivity blip, catch the transition here before handling the lap.
+            applySessionChange(discord,
+                    AccBroadcastingClient.getClient().getModel().currentSessionId);
             handleLap(discord, lc);
         } else if (e instanceof SessionChangedEvent sc) {
-            handleSessionChange(discord, sc);
+            applySessionChange(discord, sc.getSessionId());
         }
     }
 
@@ -225,9 +230,16 @@ public final class RaceFeedPublisher implements EventListener {
     }
 
     private void handleSessionChange(DiscordService discord, SessionChangedEvent sc) {
-        // ACC sometimes fires SessionChangedEvent twice for the same transition.
-        // Guard against duplicate announcements by tracking the last session key.
-        var sid = sc.getSessionId();
+        applySessionChange(discord, sc.getSessionId());
+    }
+
+    /**
+     * Core session-change handler. Called from both the SessionChangedEvent listener
+     * (normal path) and the per-lap fallback poll in onEvent() (catches transitions
+     * missed during a brief ACC connectivity blip). Guarded by lastAnnouncedSessionKey
+     * so the body runs exactly once per unique session — safe to call frequently.
+     */
+    private void applySessionChange(DiscordService discord, SessionId sid) {
         String key = sid.getType() + "_" + sid.getIndex();
         if (key.equals(lastAnnouncedSessionKey)) return;
         lastAnnouncedSessionKey = key;
@@ -254,9 +266,9 @@ public final class RaceFeedPublisher implements EventListener {
             // If a flush is already queued it will fire, find nothing, and reset itself.
         }
         discord.resetLiveBoard();
-        String sessionType = sid.getType() != null
+        String sessionName = sid.getType() != null
             ? sid.getType().name() : "SESSION";
-        discord.postFeed("**" + sessionType + "** is starting");
+        discord.postFeed("**" + sessionName + "** is starting");
     }
 
     private void snapshotStartPositions() {

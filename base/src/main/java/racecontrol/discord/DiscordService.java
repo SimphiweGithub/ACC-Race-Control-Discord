@@ -119,7 +119,9 @@ public final class DiscordService {
             // Send shutdown message synchronously so it fires before JDA closes
             try {
                 TextChannel ch = instance.jda.getChannelById(TextChannel.class, instance.feedChannelId);
-                if (ch != null) ch.sendMessage("**Race Control is going offline**").complete();
+                if (ch != null) ch.sendMessage("**Race Control is going offline**")
+                        .timeout(2, java.util.concurrent.TimeUnit.SECONDS)
+                        .complete();
             } catch (Exception e) {
                 LOG.log(Level.WARNING, "Could not send shutdown message", e);
             }

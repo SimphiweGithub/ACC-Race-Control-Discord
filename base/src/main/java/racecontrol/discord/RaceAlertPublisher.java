@@ -207,7 +207,7 @@ public final class RaceAlertPublisher {
             if (passeePrev == null || passeePrev != currPos) continue;  // must be a clean swap
             if (passee.isInPit() || justPitted(passee)) continue;
 
-            String key = pairKey(car.id, passee.id);
+            String key = pairKey(car.getDriver().fullName(), passee.getDriver().fullName());
             Long last = overtakeLastFire.get(key);
             if (last != null && (now - last) < OVERTAKE_COOLDOWN_MS) continue;
 
@@ -266,7 +266,7 @@ public final class RaceAlertPublisher {
             int oldestGap = hist.peekFirst()[1];
             if (oldestGap - gap < CLOSING_DELTA_MS) continue;     // not closing fast enough
 
-            String key = pairKey(car.id, aheadId);
+            String key = pairKey(car.getDriver().fullName(), ahead.getDriver().fullName());
             Long last = closingLastFire.get(key);
             if (last != null && (now - last) < CLOSING_COOLDOWN_MS) continue;
 
@@ -311,7 +311,7 @@ public final class RaceAlertPublisher {
             int[] prev = previousSample(hist);
             if (prev == null || prev[0] != ahead.id || prev[1] >= SIDE_BY_SIDE_GAP_MS * 2) continue;
 
-            String key = pairKey(car.id, ahead.id);
+            String key = pairKey(car.getDriver().fullName(), ahead.getDriver().fullName());
             Long last = sideBySideLastFire.get(key);
             if (last != null && (now - last) < SIDE_BY_SIDE_COOLDOWN_MS) continue;
 
@@ -344,6 +344,15 @@ public final class RaceAlertPublisher {
     /** Stable order-independent key for a pair of car ids. */
     private static String pairKey(int a, int b) {
         return Math.min(a, b) + "_" + Math.max(a, b);
+    }
+
+    /**
+     * Stable order-independent key for a pair of driver names.
+     * Used for cooldown maps so duplicate car-ID registrations (same driver,
+     * multiple ACC car slots) share the same cooldown entry.
+     */
+    private static String pairKey(String a, String b) {
+        return a.compareTo(b) <= 0 ? a + "|" + b : b + "|" + a;
     }
 
     /** The sample before the most recent one, or null if history is too short. */
