@@ -175,7 +175,7 @@ public static String buildMessage(SessionMode mode, String trackName, List<Leade
                     "P", "Driver", "Last", "Best", "Gap", "S1", "S2", "S3"));
             for (LeaderboardEntry e : entries) {
                 String gapStr = e.position == 1 ? "\u2014" : formatGap(e.gap);
-                sb.append(String.format("%3d %-18s %-9s %-9s %-10s %-7s %-7s %-7s\n",
+                sb.append(String.format("%3d %s %-9s %-9s %-10s %-7s %-7s %-7s\n",
                         e.position,
                         monoTruncate(e.driverName, 18),
                         formatLap(e.lastLap),
@@ -205,7 +205,7 @@ public static String buildMessage(SessionMode mode, String trackName, List<Leade
                 } else {
                     gapStr = formatGap(e.bestLap.minus(bestLapTime));
                 }
-                sb.append(String.format("%3d %-18s %-9s %-9s %-10s\n",
+                sb.append(String.format("%3d %s %-9s %-9s %-10s\n",
                         e.position,
                         monoTruncate(e.driverName, 18),
                         formatLap(e.lastLap),
@@ -218,7 +218,7 @@ public static String buildMessage(SessionMode mode, String trackName, List<Leade
             sb.append("P   Driver             Last      Best      Int        Laps Pits\n");
             for (LeaderboardEntry e : entries) {
                 String intStr = e.position == 1 ? "\u2014" : formatGap(e.gap);
-                sb.append(String.format("%3d %-18s %-9s %-9s %-10s %4s %4s\n",
+                sb.append(String.format("%3d %s %-9s %-9s %-10s %4s %4s\n",
                         e.position,
                         monoTruncate(e.driverName, 18),
                         formatLap(e.lastLap),
@@ -249,12 +249,57 @@ public static String buildMessage(SessionMode mode, String trackName, List<Leade
         }
     }
 
-    private static String monoTruncate(String s, int max) {
-        if (s == null) return "";
-        int count = s.codePointCount(0, s.length());
-        if (count <= max) return padWidth(s, max);
-        int end = s.offsetByCodePoints(0, max - 1);
-        return padWidth(s.substring(0, end) + "\u2026", max);
+    /**
+     * Return a string that occupies exactly {@code cols} display columns in a
+     * monospace font. Full-width characters (CJK, Hangul, emoji, \u2026) count as
+     * 2 columns; all others count as 1. Truncates with \u2026 if the name is wider
+     * than {@code cols}, and pads with spaces if it is narrower.
+     * <p>
+     * This replaces the old char-count approach which broke alignment whenever
+     * a driver name contained Korean, Chinese, or Japanese characters.
+     */
+    private static String monoTruncate(String s, int cols) {
+        if (s == null) s = "";
+        StringBuilder out = new StringBuilder();
+        int w = 0;
+        for (int i = 0; i < s.length(); ) {
+            int cp = s.codePointAt(i);
+            int cw = isWideCodePoint(cp) ? 2 : 1;
+            if (w + cw > cols) {
+                // Back up one character to make room for the ellipsis
+                if (out.length() > 0) {
+                    int prevCp = out.codePointBefore(out.length());
+                    out.setLength(out.length() - Character.charCount(prevCp));
+                    w -= isWideCodePoint(prevCp) ? 2 : 1;
+                }
+                out.append('\u2026');   // \u2026
+                w += 1;
+                break;
+            }
+            out.appendCodePoint(cp);
+            w += cw;
+            i += Character.charCount(cp);
+        }
+        // Pad to exactly cols display columns
+        while (w < cols) { out.append(' '); w++; }
+        return out.toString();
+    }
+
+    /** True for code points that occupy 2 columns in a monospace font. */
+    private static boolean isWideCodePoint(int cp) {
+        return (cp >= 0x1100  && cp <= 0x115F)   // Hangul Jamo
+            || (cp >= 0x2E80  && cp <= 0x303E)   // CJK Radicals / Kangxi / CJK Symbols
+            || (cp >= 0x3041  && cp <= 0x33BF)   // Hiragana, Katakana, Bopomofo, Hangul Compat
+            || (cp >= 0x3400  && cp <= 0x4DBF)   // CJK Extension A
+            || (cp >= 0x4E00  && cp <= 0x9FFF)   // CJK Unified Ideographs
+            || (cp >= 0xA000  && cp <= 0xA4CF)   // Yi
+            || (cp >= 0xAC00  && cp <= 0xD7AF)   // Hangul Syllables
+            || (cp >= 0xF900  && cp <= 0xFAFF)   // CJK Compatibility Ideographs
+            || (cp >= 0xFE10  && cp <= 0xFE6F)   // Vertical / small / CJK compat forms
+            || (cp >= 0xFF01  && cp <= 0xFF60)   // Fullwidth Latin & punctuation
+            || (cp >= 0xFFE0  && cp <= 0xFFE6)   // Fullwidth signs
+            || (cp >= 0x1F300 && cp <= 0x1F9FF)  // Emoji (misc symbols, emoticons)
+            || (cp >= 0x20000 && cp <= 0x2A6DF); // CJK Extension B
     }
 
     private static String rightAlign(int value, int width) {
