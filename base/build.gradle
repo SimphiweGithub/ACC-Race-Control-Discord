@@ -2,12 +2,12 @@ plugins {
     id 'java'
     id 'jacoco'
     id 'application'
-    id 'com.github.hierynomus.license' version '0.16.1'
     // id 'maven-publish' // Uncomment if you actually want publishing
 }
 
 apply from: "${rootDir}/gradle/versioning.gradle"
-apply from: "${rootDir}/gradle/license-header.gradle"
+// license-header plugin removed: com.github.hierynomus.license:0.16.1
+// pulls plexus-utils:2.0.5 which Maven Central now returns 403 for.
 
 def distributionName = "ACC Race Control " + project.ext.versionString
 
