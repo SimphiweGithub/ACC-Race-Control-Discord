@@ -25,8 +25,24 @@ jobs:
         run: .\gradlew.bat :base:buildRelease
         shell: pwsh
 
-      - name: Upload to GitHub Release
+      - name: Rename artifact
+        id: artifact
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $src = Get-ChildItem "base/build/release/*.zip" | Select-Object -First 1
+          $dest = "base/build/release/ACC-Race-Control-Discord-$version.zip"
+          Rename-Item $src.FullName $dest
+          echo "path=$dest" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: base/build/release/*.zip
-          generate_release_notes: true
+          files: ${{ steps.artifact.outputs.path }}
+          generate_release_notes: false
+          body: |
+            ## ACC Race Control ${{ github.ref_name }}
+
+            **Download:** `ACC-Race-Control-Discord-${{ github.ref_name }}.zip`
+
+            Extract the ZIP and run `Start.bat` to launch.
