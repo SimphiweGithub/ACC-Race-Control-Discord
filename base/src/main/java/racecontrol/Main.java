@@ -8,7 +8,9 @@ package racecontrol;
 import racecontrol.utility.Version;
 import racecontrol.gui.RaceControlApplet;
 import racecontrol.discord.DiscordService;
+import racecontrol.discord.LapHistoryStore;
 import racecontrol.discord.LiveBoardPublisher;
+import racecontrol.discord.RaceAlertPublisher;
 import racecontrol.discord.RaceFeedPublisher;
 import racecontrol.persistance.PersistantConfig;
 import java.io.File;
@@ -133,7 +135,9 @@ public class Main {
             long channelId = Long.parseLong(chanStr);
             DiscordService.start(token, guildId, channelId);
             RaceFeedPublisher.register();
+            LapHistoryStore.register();
             LiveBoardPublisher.start();
+            RaceAlertPublisher.start();
             LOG.info("Discord bot started from saved config.");
         } catch (Exception e) {
             LOG.log(java.util.logging.Level.WARNING, "Discord auto-start failed", e);

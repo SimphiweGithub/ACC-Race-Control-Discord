@@ -1,7 +1,9 @@
 package racecontrol.gui.app.discord;
 
 import racecontrol.discord.DiscordService;
+import racecontrol.discord.LapHistoryStore;
 import racecontrol.discord.LiveBoardPublisher;
+import racecontrol.discord.RaceAlertPublisher;
 import racecontrol.discord.RaceFeedPublisher;
 import racecontrol.gui.RaceControlApplet;
 import racecontrol.gui.app.Menu.MenuItem;
@@ -76,7 +78,9 @@ public class DiscordConfigController implements PageController {
             try {
                 DiscordService.start(token, guildId, channelId);
                 RaceFeedPublisher.register();
+                LapHistoryStore.register();
                 LiveBoardPublisher.start();
+                RaceAlertPublisher.start();
                 RaceControlApplet.runLater(() -> panel.setStatus("Connected", true));
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();

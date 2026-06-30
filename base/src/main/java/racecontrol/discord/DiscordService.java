@@ -49,7 +49,14 @@ public final class DiscordService {
                 Commands.slash("follow", "Get pinged on a driver's race moments")
                         .addOption(OptionType.STRING, "driver", "Driver name", true, true),
                 Commands.slash("unfollow", "Stop following all drivers"),
-                Commands.slash("following", "See who you are currently following")
+                Commands.slash("following", "See who you are currently following"),
+                Commands.slash("gap", "Gap between any two drivers right now")
+                        .addOption(OptionType.STRING, "driver1", "First driver",  true, true)
+                        .addOption(OptionType.STRING, "driver2", "Second driver", true, true),
+                Commands.slash("battle", "List all battles on track (gap < 1 s)"),
+                Commands.slash("pace", "Last 3 lap times for a driver")
+                        .addOption(OptionType.STRING, "driver", "Driver name", true, true),
+                Commands.slash("pitstops", "Pit stop summary for the field")
             ).queue();
         }
 
