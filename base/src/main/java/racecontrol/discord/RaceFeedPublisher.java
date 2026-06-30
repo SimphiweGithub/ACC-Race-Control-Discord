@@ -38,9 +38,16 @@ public final class RaceFeedPublisher implements EventListener {
     /** Minimum gap between personal-best DM pings for the same driver (3 minutes). */
     private static final long PB_PING_COOLDOWN_MS = 3 * 60 * 1_000L;
 
-    private Integer sessionBestMs = null;
+    private Integer sessionBestMs     = null;
+    /** Full name of the driver who currently holds the session fastest lap. */
+    private String  sessionBestDriver = null;
     /** carId -> personal best lap time ms for this session. */
     private final Map<Integer, Integer> personalBestMs = new HashMap<>();
+    /**
+     * carId -> race-start (grid) position, snapshotted when a RACE session begins.
+     * Used at race end to compute biggest-mover for the recap.
+     */
+    private final Map<Integer, Integer> raceStartPositions = new HashMap<>();
     /** carId -> last time (epoch ms) a PB ping DM was sent for that driver. */
     private final Map<Integer, Long> pbPingLastFire = new HashMap<>();
     /**
@@ -125,7 +132,8 @@ public final class RaceFeedPublisher implements EventListener {
 
         // Session-best (fastest lap) alert
         if (sessionBestMs == null || ms < sessionBestMs) {
-            sessionBestMs = ms;
+            sessionBestMs     = ms;
+            sessionBestDriver = driverName;
             discord.postFeedEmbed(new EmbedBuilder()
                 .setTitle("Fastest Lap")
                 .setDescription("**" + driverName + "**  " + TimeUtils.asLapTime(ms))
@@ -162,13 +170,21 @@ public final class RaceFeedPublisher implements EventListener {
         if (key.equals(lastAnnouncedSessionKey)) return;
         lastAnnouncedSessionKey = key;
 
-        // Post race podium before wiping state — car positions are still valid here.
+        // Post recap before wiping state - positions and lap data are still valid here.
         if (lastSessionType == SessionType.RACE) {
-            postPodium(discord);
+            postRaceRecap(discord);
         }
         lastSessionType = sid.getType();
 
-        sessionBestMs = null;
+        // If entering a race, snapshot grid positions now for the end-of-race recap.
+        if (sid.getType() == SessionType.RACE) {
+            snapshotStartPositions();
+        } else {
+            raceStartPositions.clear();
+        }
+
+        sessionBestMs     = null;
+        sessionBestDriver = null;
         personalBestMs.clear();
         pbPingLastFire.clear();
         discord.resetLiveBoard();
@@ -177,21 +193,113 @@ public final class RaceFeedPublisher implements EventListener {
         discord.postFeed("**" + sessionType + "** is starting");
     }
 
-    private void postPodium(DiscordService discord) {
+    private void snapshotStartPositions() {
+        raceStartPositions.clear();
+        try {
+            for (Car car : AccBroadcastingClient.getClient().getModel().getCars()) {
+                if (car.realtimePosition > 0) {
+                    raceStartPositions.put(car.id, car.realtimePosition);
+                }
+            }
+            LOG.fine("Snapshotted " + raceStartPositions.size() + " grid positions for recap.");
+        } catch (Exception ignored) {}
+    }
+
+    private void postRaceRecap(DiscordService discord) {
         Model model = AccBroadcastingClient.getClient().getModel();
-        List<Car> top = new ArrayList<>(model.getCars()).stream()
+        List<Car> cars = new ArrayList<>(model.getCars());
+
+        // Podium
+        List<Car> podium = cars.stream()
             .filter(c -> c.realtimePosition >= 1 && c.realtimePosition <= 3)
             .sorted(Comparator.comparingInt(c -> c.realtimePosition))
             .collect(Collectors.toList());
+        if (podium.isEmpty()) return;
 
-        if (top.isEmpty()) return;
-
-        String[] labels = {"P1", "P2", "P3"};
-        StringBuilder sb = new StringBuilder("**Race Result**\n");
-        for (Car car : top) {
-            sb.append(labels[car.realtimePosition - 1])
-              .append(" **").append(car.getDriver().fullName()).append("**\n");
+        StringBuilder podiumSb = new StringBuilder();
+        String[] medals = {"P1", "P2", "P3"};
+        for (Car car : podium) {
+            podiumSb.append(medals[car.realtimePosition - 1])
+                    .append("  **").append(car.getDriver().fullName()).append("**\n");
         }
-        discord.postFeed(sb.toString().trim());
+
+        EmbedBuilder embed = new EmbedBuilder()
+            .setTitle("Race Recap")
+            .setDescription(podiumSb.toString().trim())
+            .setColor(new Color(0xF1C40F));
+
+        // Fastest lap
+        if (sessionBestDriver != null && sessionBestMs != null) {
+            embed.addField("Fastest Lap",
+                    "**" + sessionBestDriver + "**\n" + TimeUtils.asLapTime(sessionBestMs),
+                    true);
+        }
+
+        // Biggest mover (grid position vs. finish position)
+        Car biggestMover = null;
+        int maxGain = 0;
+        for (Car car : cars) {
+            Integer start = raceStartPositions.get(car.id);
+            if (start == null || car.realtimePosition <= 0) continue;
+            int gain = start - car.realtimePosition;
+            if (gain > maxGain) { maxGain = gain; biggestMover = car; }
+        }
+        if (biggestMover != null && maxGain > 0) {
+            Integer start = raceStartPositions.get(biggestMover.id);
+            embed.addField("Biggest Mover",
+                    "**" + biggestMover.getDriver().fullName() + "**\n"
+                    + "P" + start + " -> P" + biggestMover.realtimePosition
+                    + " (+" + maxGain + ")",
+                    true);
+        }
+
+        // Most overtakes (from RaceAlertPublisher's detection)
+        Map<Integer, Integer> overtakeCounts = RaceAlertPublisher.getOvertakeCounts();
+        Car topOvertaker = null;
+        int maxOvertakes = 0;
+        for (Map.Entry<Integer, Integer> e : overtakeCounts.entrySet()) {
+            if (e.getValue() > maxOvertakes) {
+                maxOvertakes = e.getValue();
+                int carId = e.getKey();
+                topOvertaker = cars.stream()
+                        .filter(c -> c.id == carId).findFirst().orElse(null);
+            }
+        }
+        if (topOvertaker != null && maxOvertakes > 0) {
+            embed.addField("Most Overtakes",
+                    "**" + topOvertaker.getDriver().fullName() + "**\n"
+                    + maxOvertakes + (maxOvertakes == 1 ? " pass" : " passes"),
+                    true);
+        }
+
+        discord.postFeedEmbed(embed.build());
+
+        // Personal DMs to drivers who have claimed themselves via /iam
+        final Car finalBiggestMover = biggestMover;
+        final int finalMaxGain = maxGain;
+        final Map<Integer, Integer> overtakeSnapshot = new HashMap<>(overtakeCounts);
+        for (Car car : cars) {
+            if (car.realtimePosition <= 0) continue;
+            String userId = IamStore.userOf(car.getDriver().fullName());
+            if (userId == null) continue;
+
+            StringBuilder dm = new StringBuilder();
+            dm.append("Race over! You finished **P").append(car.realtimePosition).append("**");
+            if (finalBiggestMover != null && finalBiggestMover.id == car.id) {
+                Integer start = raceStartPositions.get(car.id);
+                dm.append(" - biggest mover of the race (from P").append(start).append(")!");
+            }
+            if (sessionBestDriver != null && sessionBestDriver.equals(car.getDriver().fullName())) {
+                dm.append(" You set the fastest lap!");
+            }
+            int myOvertakes = overtakeSnapshot.getOrDefault(car.id, 0);
+            if (myOvertakes > 0) {
+                dm.append(" You made ").append(myOvertakes)
+                  .append(myOvertakes == 1 ? " overtake." : " overtakes.");
+            } else {
+                dm.append(".");
+            }
+            discord.dmUser(userId, dm.toString());
+        }
     }
 }

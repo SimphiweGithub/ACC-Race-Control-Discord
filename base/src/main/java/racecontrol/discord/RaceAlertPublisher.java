@@ -11,8 +11,13 @@ import racecontrol.client.model.Model;
 import racecontrol.client.protocol.enums.SessionType;
 import racecontrol.utility.TimeUtils;
 
+import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -45,25 +50,51 @@ public final class RaceAlertPublisher {
                 return t;
             });
 
-    /** Gap threshold for a "battle" alert in ms. */
-    private static final long BATTLE_GAP_MS = 1_000;
     /**
-     * Minimum time between alerts for the same pair.
-     * 5 minutes — prevents the early-race field bunching at Monza
-     * (and similar tracks) from cycling through 20+ pairs repeatedly.
-     * A sustained battle that still matters after 5 min will fire again.
+     * Battle detection fires on CHANGE, not on mere proximity:
+     *   CLOSING IN   - a car is hunting down the one ahead (gap shrinking)
+     *   SIDE BY SIDE - the chase has reached wheel-to-wheel range
+     *   OVERTAKE     - a clean on-track position swap
+     * All three are field-wide. The old proximity-only "battle" alert was
+     * retired: being close is a state, not an event, so it spammed the feed.
      */
-    private static final long BATTLE_COOLDOWN_MS = 5 * 60 * 1_000L;
-    /** Max battle alerts per 2-second tick — prevents rate-limit bursts. */
-    private static final int MAX_BATTLE_ALERTS_PER_TICK = 1;
+    /** Closing: gap must be inside this window (ms) to be worth narrating. */
+    private static final long CLOSING_GAP_WINDOW_MS = 2_000;
+    /** Closing: gap must have shrunk at least this much (ms) across the window. */
+    private static final long CLOSING_DELTA_MS = 300;
+    /** Closing: number of 2s ticks the history window spans (4 samples ~ 6s). */
+    private static final int CLOSING_WINDOW_TICKS = 3;
+    /** Closing: under this gap (ms) the pair is committed - side-by-side takes over. */
+    private static final long CLOSING_FLOOR_MS = 400;
+    /** Side-by-side: gap under this (ms) counts as wheel-to-wheel. */
+    private static final long SIDE_BY_SIDE_GAP_MS = 300;
+
+    /** Per-pair cooldowns (ms). */
+    private static final long CLOSING_COOLDOWN_MS      = 90 * 1_000L;
+    private static final long SIDE_BY_SIDE_COOLDOWN_MS = 60 * 1_000L;
+    private static final long OVERTAKE_COOLDOWN_MS     = 30 * 1_000L;
+
+    /** Per-tick alert caps - prevents rate-limit bursts. */
+    private static final int MAX_CLOSING_ALERTS_PER_TICK      = 1;
+    private static final int MAX_SIDE_BY_SIDE_ALERTS_PER_TICK = 1;
+    private static final int MAX_OVERTAKE_ALERTS_PER_TICK     = 2;
     /** Max pit-stop alerts per 2-second tick. */
     private static final int MAX_PIT_ALERTS_PER_TICK = 2;
 
     // All state below is only touched from the single SCHEDULER thread.
     private static int     currentLeaderId = -1;
     private static boolean halfwayFired    = false;
-    private static final Map<Integer, Integer> pitCounts      = new HashMap<>();
-    private static final Map<String,  Long>    battleLastFire = new HashMap<>();
+    private static final Map<Integer, Integer> pitCounts    = new HashMap<>();
+    /** carId -> position on the previous tick (for overtake detection). */
+    private static final Map<Integer, Integer> lastPosition = new HashMap<>();
+    /** carId -> rolling history of {aheadCarId, gapMs} samples (for closing rate). */
+    private static final Map<Integer, Deque<int[]>> gapHistory = new HashMap<>();
+    /** Per-pair last-fire timestamps, one map per alert type. */
+    private static final Map<String, Long> closingLastFire    = new HashMap<>();
+    private static final Map<String, Long> sideBySideLastFire = new HashMap<>();
+    private static final Map<String, Long> overtakeLastFire   = new HashMap<>();
+    /** carId -> number of on-track overtakes this session (for post-race recap). */
+    private static final Map<Integer, Integer> overtakeCounts = new ConcurrentHashMap<>();
     private static String  lastSessionKey  = "";
 
     private RaceAlertPublisher() {}
@@ -92,7 +123,12 @@ public final class RaceAlertPublisher {
                 currentLeaderId = -1;
                 halfwayFired    = false;
                 pitCounts.clear();
-                battleLastFire.clear();
+                lastPosition.clear();
+                gapHistory.clear();
+                closingLastFire.clear();
+                sideBySideLastFire.clear();
+                overtakeLastFire.clear();
+                overtakeCounts.clear();
             }
 
             if (sid.getType() != SessionType.RACE) return;
@@ -111,7 +147,9 @@ public final class RaceAlertPublisher {
                     .orElse(false);
 
             if (raceUnderway) checkLeadChange(discord, cars, sessionTimeMs);
-            if (raceUnderway) checkBattles(discord, cars);
+            if (raceUnderway) checkOvertakes(discord, cars);
+            if (raceUnderway) checkClosing(discord, cars);
+            if (raceUnderway) checkSideBySide(discord, cars);
             checkPitStops(discord, cars, sessionTimeMs);
             checkHalfway(discord, sessionTimeMs, sessionEndMs);
 
@@ -147,38 +185,173 @@ public final class RaceAlertPublisher {
 
     // ?? Battles ???????????????????????????????????????????????????????????????
 
-    private static void checkBattles(DiscordService discord, List<Car> cars) {
+    private static void checkOvertakes(DiscordService discord, List<Car> cars) {
+        long now = System.currentTimeMillis();
+        int fired = 0;
+        for (Car car : cars) {
+            if (fired >= MAX_OVERTAKE_ALERTS_PER_TICK) break;
+
+            Integer prevPos = lastPosition.get(car.id);
+            if (prevPos == null) continue;
+            int currPos = car.realtimePosition;
+            if (currPos != prevPos - 1) continue;          // gained exactly one place
+            if (car.isInPit() || justPitted(car)) continue;
+
+            // The car it passed now sits where this car used to be.
+            Car passee = null;
+            for (Car c : cars) {
+                if (c.realtimePosition == prevPos) { passee = c; break; }
+            }
+            if (passee == null) continue;
+            Integer passeePrev = lastPosition.get(passee.id);
+            if (passeePrev == null || passeePrev != currPos) continue;  // must be a clean swap
+            if (passee.isInPit() || justPitted(passee)) continue;
+
+            String key = pairKey(car.id, passee.id);
+            Long last = overtakeLastFire.get(key);
+            if (last != null && (now - last) < OVERTAKE_COOLDOWN_MS) continue;
+
+            overtakeLastFire.put(key, now);
+            overtakeCounts.merge(car.id, 1, Integer::sum);
+            discord.postFeed("**OVERTAKE** - **" + car.getDriver().fullName()
+                    + "** passes **" + passee.getDriver().fullName() + "** for P" + currPos);
+            fired++;
+        }
+
+        // Snapshot positions for next tick.
+        lastPosition.clear();
+        for (Car c : cars) lastPosition.put(c.id, c.realtimePosition);
+    }
+
+    // -- Closing rate (field-wide) ----------------------------------------------
+
+    private static void checkClosing(DiscordService discord, List<Car> cars) {
         long now = System.currentTimeMillis();
 
-        // Sort by closest gap first so the tightest battles fire before the cap is hit
-        List<Car> candidates = cars.stream()
-                .filter(c -> c.realtimePosition > 1 && !c.isInPit())
-                .filter(c -> c.gapPositionAhead > 0
-                          && c.gapPositionAhead != Integer.MAX_VALUE
-                          && c.gapPositionAhead < BATTLE_GAP_MS)
+        // Key by car id so lookup is disconnect-proof (no assumption of contiguous positions).
+        Map<Integer, Car> idMap = new HashMap<>();
+        for (Car c : cars) idMap.put(c.id, c);
+
+        int fired = 0;
+        // Tightest gaps first so the best story fires before the per-tick cap.
+        List<Car> ordered = cars.stream()
+                .filter(c -> c.realtimePosition > 1)
                 .sorted(Comparator.comparingInt(c -> c.gapPositionAhead))
                 .collect(Collectors.toList());
 
-        int fired = 0;
-        for (Car car : candidates) {
-            if (fired >= MAX_BATTLE_ALERTS_PER_TICK) break;
+        for (Car car : ordered) {
+            // carPositionAhead is the id stored by GapExtension (0 = leader/no car ahead).
+            int aheadId = car.carPositionAhead;
+            Car ahead   = aheadId > 0 ? idMap.get(aheadId) : null;
+            int gap     = car.gapPositionAhead;
 
-            Car ahead = cars.stream()
-                    .filter(c -> c.realtimePosition == car.realtimePosition - 1)
-                    .findFirst().orElse(null);
-            if (ahead == null || ahead.isInPit()) continue;
+            // Record the sample first so side-by-side and the next tick can use it.
+            Deque<int[]> hist = gapHistory.computeIfAbsent(car.id, k -> new ArrayDeque<>());
+            hist.addLast(new int[]{aheadId, gap});
+            while (hist.size() > CLOSING_WINDOW_TICKS + 1) hist.removeFirst();
 
-            String pairKey = Math.min(car.id, ahead.id) + "_" + Math.max(car.id, ahead.id);
-            Long lastFire  = battleLastFire.get(pairKey);
-            if (lastFire != null && (now - lastFire) < BATTLE_COOLDOWN_MS) continue;
+            if (fired >= MAX_CLOSING_ALERTS_PER_TICK) continue;   // keep recording, stop alerting
+            if (ahead == null) continue;
+            if (car.isInPit() || ahead.isInPit()) continue;
+            if (gap <= 0 || gap == Integer.MAX_VALUE) continue;
+            if (gap >= CLOSING_GAP_WINDOW_MS) continue;           // not close enough yet
+            if (gap < CLOSING_FLOOR_MS) continue;                 // committed - side-by-side takes over
+            if (hist.size() < CLOSING_WINDOW_TICKS + 1) continue; // need a full window
 
-            battleLastFire.put(pairKey, now);
-            discord.postFeed(String.format(Locale.US, "**BATTLE** - %s (P%d) vs %s (P%d) - %.3fs",
-                    car.getDriver().fullName(),   car.realtimePosition,
-                    ahead.getDriver().fullName(), ahead.realtimePosition,
-                    car.gapPositionAhead / 1000.0));
+            // The same car must have been ahead for the whole window.
+            boolean sameAhead = true;
+            for (int[] s : hist) if (s[0] != aheadId) { sameAhead = false; break; }
+            if (!sameAhead) continue;
+
+            int oldestGap = hist.peekFirst()[1];
+            if (oldestGap - gap < CLOSING_DELTA_MS) continue;     // not closing fast enough
+
+            String key = pairKey(car.id, aheadId);
+            Long last = closingLastFire.get(key);
+            if (last != null && (now - last) < CLOSING_COOLDOWN_MS) continue;
+
+            closingLastFire.put(key, now);
+            discord.postFeed(String.format(Locale.US,
+                    "**CLOSING IN** - **%s** is hunting down **%s** - %.1fs and dropping (P%d)",
+                    car.getDriver().fullName(), ahead.getDriver().fullName(),
+                    gap / 1000.0, car.realtimePosition));
             fired++;
         }
+
+        // Forget cars that have left the session.
+        gapHistory.keySet().retainAll(
+                cars.stream().map(c -> c.id).collect(Collectors.toSet()));
+    }
+
+    // -- Side by side (wheel to wheel) ------------------------------------------
+
+    private static void checkSideBySide(DiscordService discord, List<Car> cars) {
+        long now = System.currentTimeMillis();
+
+        Map<Integer, Car> idMap = new HashMap<>();
+        for (Car c : cars) idMap.put(c.id, c);
+
+        int fired = 0;
+        List<Car> ordered = cars.stream()
+                .filter(c -> c.realtimePosition > 1)
+                .filter(c -> c.gapPositionAhead > 0
+                          && c.gapPositionAhead != Integer.MAX_VALUE
+                          && c.gapPositionAhead < SIDE_BY_SIDE_GAP_MS)
+                .sorted(Comparator.comparingInt(c -> c.gapPositionAhead))
+                .collect(Collectors.toList());
+
+        for (Car car : ordered) {
+            if (fired >= MAX_SIDE_BY_SIDE_ALERTS_PER_TICK) break;
+
+            Car ahead = car.carPositionAhead > 0 ? idMap.get(car.carPositionAhead) : null;
+            if (ahead == null || car.isInPit() || ahead.isInPit()) continue;
+
+            // Require they were already together last tick (filters single-frame blips).
+            Deque<int[]> hist = gapHistory.get(car.id);
+            int[] prev = previousSample(hist);
+            if (prev == null || prev[0] != ahead.id || prev[1] >= SIDE_BY_SIDE_GAP_MS * 2) continue;
+
+            String key = pairKey(car.id, ahead.id);
+            Long last = sideBySideLastFire.get(key);
+            if (last != null && (now - last) < SIDE_BY_SIDE_COOLDOWN_MS) continue;
+
+            sideBySideLastFire.put(key, now);
+            discord.postFeed(String.format(Locale.US,
+                    "**SIDE BY SIDE** - **%s** and **%s** are wheel-to-wheel for P%d - %.3fs",
+                    ahead.getDriver().fullName(), car.getDriver().fullName(),
+                    car.realtimePosition, car.gapPositionAhead / 1000.0));
+            fired++;
+        }
+    }
+
+    // -- Battle helpers ---------------------------------------------------------
+
+    /** True if the car's pit count has risen since the last tick (pit-out shuffle). */
+    private static boolean justPitted(Car car) {
+        int known = pitCounts.getOrDefault(car.id, car.pitlaneCount);
+        return car.pitlaneCount > known;
+    }
+
+    /**
+     * Snapshot of on-track overtake counts for the current session.
+     * Thread-safe copy; safe to call from any thread (e.g. during session change).
+     * Returns carId -> number of overtakes made.
+     */
+    public static Map<Integer, Integer> getOvertakeCounts() {
+        return Collections.unmodifiableMap(new HashMap<>(overtakeCounts));
+    }
+
+    /** Stable order-independent key for a pair of car ids. */
+    private static String pairKey(int a, int b) {
+        return Math.min(a, b) + "_" + Math.max(a, b);
+    }
+
+    /** The sample before the most recent one, or null if history is too short. */
+    private static int[] previousSample(Deque<int[]> hist) {
+        if (hist == null || hist.size() < 2) return null;
+        Iterator<int[]> it = hist.descendingIterator();
+        it.next();          // skip current (last) sample
+        return it.next();   // previous sample
     }
 
     // ?? Pit stops ?????????????????????????????????????????????????????????????

@@ -5,6 +5,9 @@ import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
+import net.dv8tion.jda.api.events.session.SessionRecreateEvent;
+import net.dv8tion.jda.api.events.session.SessionResumeEvent;
+import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.requests.GatewayIntent;
@@ -26,6 +29,8 @@ public final class DiscordService {
      * different channels.
      */
     private final long boardChannelId;
+    /** When true, postFeed/postFeedEmbed are silently suppressed (operator kill switch). */
+    private volatile boolean quietMode          = false;
     private volatile String  liveBoardMessageId = null;
     /**
      * True while an async pin-retrieval + message-creation is in flight.
@@ -73,11 +78,29 @@ public final class DiscordService {
                 Commands.slash("battle", "List all battles on track (gap < 1 s)"),
                 Commands.slash("pace", "Last 3 lap times for a driver")
                         .addOption(OptionType.STRING, "driver", "Driver name", true, true),
-                Commands.slash("pitstops", "Pit stop summary for the field")
+                Commands.slash("pitstops", "Pit stop summary for the field"),
+                Commands.slash("iam", "Claim your ACC driver name for personal race recaps")
+                        .addOption(OptionType.STRING, "driver", "Your driver name in ACC", true, true),
+                Commands.slash("quiet", "Mute or unmute the race feed (admin only)")
+                        .addOption(OptionType.BOOLEAN, "mute", "true = mute, false = unmute", true)
             ).queue();
         }
 
         jda.addEventListener(new DiscordCommandListener(feedChannelId));
+
+        // Log and announce whenever JDA recovers from a gateway drop.
+        // SessionRecreateEvent = full reconnect (new session); SessionResumeEvent = invisible resume.
+        jda.addEventListener(new ListenerAdapter() {
+            @Override
+            public void onSessionRecreate(SessionRecreateEvent event) {
+                LOG.info("Discord gateway session recreated (full reconnect).");
+                if (instance != null) instance.postFeed("Race Control reconnected.");
+            }
+            @Override
+            public void onSessionResume(SessionResumeEvent event) {
+                LOG.info("Discord gateway session resumed.");
+            }
+        });
 
         instance = new DiscordService(jda, feedChannelId, boardChannelId);
         LOG.info("Discord bot connected and ready.");
@@ -87,7 +110,7 @@ public final class DiscordService {
         Runtime.getRuntime().addShutdownHook(new Thread(DiscordService::stop, "discord-shutdown-hook"));
 
         // Let the channel know the bot is live
-        instance.postFeed("**Race Control is online** - /follow /standings /gap /battle /pace /pitstops");
+        instance.postFeed("**Race Control is online** - /iam /follow /standings /gap /battle /pace /pitstops | admin: /quiet");
         return instance;
     }
 
@@ -118,14 +141,27 @@ public final class DiscordService {
         return feedChannelId;
     }
 
-    /** Post a plain-text message to the feed channel. */
+    /**
+     * Enable or disable quiet mode. When quiet, postFeed and postFeedEmbed are
+     * suppressed so the operator can silence the bot mid-race without restarting.
+     */
+    public void setQuietMode(boolean q) {
+        quietMode = q;
+        LOG.info("Discord feed quiet mode: " + (q ? "ON" : "OFF"));
+    }
+
+    public boolean isQuietMode() { return quietMode; }
+
+    /** Post a plain-text message to the feed channel. Suppressed in quiet mode. */
     public void postFeed(String text) {
+        if (quietMode) return;
         TextChannel ch = jda.getChannelById(TextChannel.class, feedChannelId);
         if (ch != null) ch.sendMessage(text).queue(null, err -> LOG.log(Level.WARNING, "Discord send failed", err));
     }
 
-    /** Post an embed to the feed channel. */
+    /** Post an embed to the feed channel. Suppressed in quiet mode. */
     public void postFeedEmbed(MessageEmbed embed) {
+        if (quietMode) return;
         TextChannel ch = jda.getChannelById(TextChannel.class, feedChannelId);
         if (ch != null) ch.sendMessageEmbeds(embed).queue(null, err -> LOG.log(Level.WARNING, "Discord embed failed", err));
     }

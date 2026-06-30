@@ -1,5 +1,6 @@
 package racecontrol.discord;
 
+import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
@@ -41,6 +42,8 @@ public final class DiscordCommandListener extends ListenerAdapter {
             case "battle"    -> handleBattle(event);
             case "pace"      -> handlePace(event);
             case "pitstops"  -> handlePitstops(event);
+            case "iam"       -> handleIam(event);
+            case "quiet"     -> handleQuiet(event);
         }
     }
 
@@ -53,7 +56,8 @@ public final class DiscordCommandListener extends ListenerAdapter {
         boolean isDriverOption = focused.equals("driver")
                               || focused.equals("driver1")
                               || focused.equals("driver2");
-        boolean isDriverCmd    = cmd.equals("follow") || cmd.equals("gap") || cmd.equals("pace");
+        boolean isDriverCmd    = cmd.equals("follow") || cmd.equals("gap") || cmd.equals("pace")
+                              || cmd.equals("iam");
         if (!isDriverOption || !isDriverCmd) return;
 
         String typed = event.getFocusedOption().getValue().toLowerCase();
@@ -305,6 +309,71 @@ public final class DiscordCommandListener extends ListenerAdapter {
         // Wrap in code block for alignment if it fits
         String wrapped = "```\n" + reply + "\n```";
         event.reply(wrapped.length() <= 2000 ? wrapped : reply).setEphemeral(true).queue();
+    }
+
+    // ?? /iam <driver> ????????????????????????????????????????????????????????
+
+    private void handleIam(SlashCommandInteractionEvent event) {
+        var opt = event.getOption("driver");
+        if (opt == null) {
+            event.reply("Provide your driver name.").setEphemeral(true).queue();
+            return;
+        }
+
+        Model model = AccBroadcastingClient.getClient().getModel();
+        if (!model.gameConnected) {
+            event.reply("No ACC session active yet - try again once the race is loaded.")
+                 .setEphemeral(true).queue();
+            return;
+        }
+
+        List<Car> cars = LiveBoardPublisher.dedupedCars(model.getCars());
+        Car car = findCar(cars, opt.getAsString());
+        if (car == null) {
+            event.reply("Driver **" + opt.getAsString()
+                    + "** not found. Type your name as it appears in ACC, "
+                    + "or wait until you are in an active session.")
+                 .setEphemeral(true).queue();
+            return;
+        }
+
+        String driverName = car.getDriver().fullName();
+        IamStore.claim(event.getUser().getId(), driverName);
+        event.reply("Got it! You are **" + driverName
+                + "**. You will receive a personal recap DM after each race.")
+             .setEphemeral(true).queue();
+    }
+
+    // ?? /quiet <mute> ????????????????????????????????????????????????????????
+
+    private void handleQuiet(SlashCommandInteractionEvent event) {
+        if (event.getMember() == null
+                || !event.getMember().hasPermission(Permission.ADMINISTRATOR)) {
+            event.reply("This command requires Administrator permission.")
+                 .setEphemeral(true).queue();
+            return;
+        }
+
+        var opt = event.getOption("mute");
+        if (opt == null) {
+            event.reply("Provide true (mute) or false (unmute).").setEphemeral(true).queue();
+            return;
+        }
+
+        boolean mute = opt.getAsBoolean();
+        DiscordService discord = DiscordService.get();
+        if (discord == null) {
+            event.reply("Discord service is not running.").setEphemeral(true).queue();
+            return;
+        }
+
+        discord.setQuietMode(mute);
+        if (mute) {
+            event.reply("Feed muted. Use `/quiet mute:false` to resume.").setEphemeral(true).queue();
+        } else {
+            discord.postFeed("Race Control feed is **active** again.");
+            event.reply("Feed unmuted.").setEphemeral(true).queue();
+        }
     }
 
     // ?? Helpers ???????????????????????????????????????????????????????????????
