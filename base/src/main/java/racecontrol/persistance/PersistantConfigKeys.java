@@ -55,8 +55,14 @@ public interface PersistantConfigKeys {
     /**
      * Discord bot configuration
      */
-    public Key<String> DISCORD_BOT_TOKEN    = new Key<>(String.class, "", "discordBotToken");
-    public Key<String> DISCORD_GUILD_ID     = new Key<>(String.class, "", "discordGuildId");
-    public Key<String> DISCORD_CHANNEL_ID   = new Key<>(String.class, "", "discordChannelId");
+    public Key<String> DISCORD_BOT_TOKEN       = new Key<>(String.class, "", "discordBotToken");
+    public Key<String> DISCORD_GUILD_ID        = new Key<>(String.class, "", "discordGuildId");
+    public Key<String> DISCORD_CHANNEL_ID      = new Key<>(String.class, "", "discordChannelId");
+    /**
+     * Optional separate channel for the live leaderboard.
+     * When set, the live board posts here instead of the main feed channel,
+     * keeping race alerts and the leaderboard in separate Discord channels.
+     */
+    public Key<String> DISCORD_BOARD_CHANNEL_ID = new Key<>(String.class, "", "discordBoardChannelId");
 
 }

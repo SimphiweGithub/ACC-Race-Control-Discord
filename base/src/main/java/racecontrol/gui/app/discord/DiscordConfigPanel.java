@@ -18,8 +18,11 @@ public class DiscordConfigPanel extends LPContainer {
     private final LPLabel guildLabel      = new LPLabel("Server (Guild) ID:");
     final LPTextField guildField          = new LPTextField();
 
-    private final LPLabel channelLabel    = new LPLabel("Channel ID:");
+    private final LPLabel channelLabel    = new LPLabel("Feed Channel ID:");
     final LPTextField channelField        = new LPTextField();
+
+    private final LPLabel boardLabel      = new LPLabel("Board Channel ID (optional - live leaderboard only):");
+    final LPTextField boardField          = new LPTextField();
 
     private final LPLabel statusLabel     = new LPLabel("");
 
@@ -43,21 +46,28 @@ public class DiscordConfigPanel extends LPContainer {
         addComponent(guildField);
 
         channelLabel.setPosition(20, LINE_HEIGHT * 4);
-        channelLabel.setSize(200, LINE_HEIGHT);
+        channelLabel.setSize(500, LINE_HEIGHT);
         addComponent(channelLabel);
         channelField.setPosition(20, LINE_HEIGHT * 5);
         channelField.setValue(PersistantConfig.get(DISCORD_CHANNEL_ID));
         addComponent(channelField);
 
-        connectButton.setPosition(20, LINE_HEIGHT * 7);
+        boardLabel.setPosition(20, LINE_HEIGHT * 6);
+        boardLabel.setSize(500, LINE_HEIGHT);
+        addComponent(boardLabel);
+        boardField.setPosition(20, LINE_HEIGHT * 7);
+        boardField.setValue(PersistantConfig.get(DISCORD_BOARD_CHANNEL_ID));
+        addComponent(boardField);
+
+        connectButton.setPosition(20, LINE_HEIGHT * 9);
         connectButton.setSize(200, LINE_HEIGHT);
         addComponent(connectButton);
 
-        statusLabel.setPosition(20, LINE_HEIGHT * 8);
+        statusLabel.setPosition(20, LINE_HEIGHT * 10);
         statusLabel.setSize(600, LINE_HEIGHT);
         addComponent(statusLabel);
 
-        setSize(660, LINE_HEIGHT * 10);
+        setSize(660, LINE_HEIGHT * 12);
     }
 
     @Override
@@ -65,6 +75,7 @@ public class DiscordConfigPanel extends LPContainer {
         tokenField.setSize(w - 40, LINE_HEIGHT);
         guildField.setSize(w - 40, LINE_HEIGHT);
         channelField.setSize(w - 40, LINE_HEIGHT);
+        boardField.setSize(w - 40, LINE_HEIGHT);
     }
 
     @Override
@@ -84,5 +95,6 @@ public class DiscordConfigPanel extends LPContainer {
         tokenField.setEnabled(enabled);
         guildField.setEnabled(enabled);
         channelField.setEnabled(enabled);
+        boardField.setEnabled(enabled);
     }
 }

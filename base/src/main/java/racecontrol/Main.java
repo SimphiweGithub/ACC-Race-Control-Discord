@@ -133,7 +133,12 @@ public class Main {
         try {
             long guildId   = Long.parseLong(guildStr);
             long channelId = Long.parseLong(chanStr);
-            DiscordService.start(token, guildId, channelId);
+            String boardStr = PersistantConfig.get(racecontrol.persistance.PersistantConfigKeys.DISCORD_BOARD_CHANNEL_ID);
+            long boardChannelId = 0;
+            if (!boardStr.isBlank()) {
+                try { boardChannelId = Long.parseLong(boardStr); } catch (NumberFormatException ignored) {}
+            }
+            DiscordService.start(token, guildId, channelId, boardChannelId);
             RaceFeedPublisher.register();
             LapHistoryStore.register();
             LiveBoardPublisher.start();

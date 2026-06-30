@@ -46,10 +46,15 @@ public final class RaceAlertPublisher {
 
     /** Gap threshold for a "battle" alert in ms. */
     private static final long BATTLE_GAP_MS = 1_000;
-    /** Minimum time between alerts for the same pair (ms). */
-    private static final long BATTLE_COOLDOWN_MS = 30_000;
+    /**
+     * Minimum time between alerts for the same pair.
+     * 5 minutes — prevents the early-race field bunching at Monza
+     * (and similar tracks) from cycling through 20+ pairs repeatedly.
+     * A sustained battle that still matters after 5 min will fire again.
+     */
+    private static final long BATTLE_COOLDOWN_MS = 5 * 60 * 1_000L;
     /** Max battle alerts per 2-second tick — prevents rate-limit bursts. */
-    private static final int MAX_BATTLE_ALERTS_PER_TICK = 2;
+    private static final int MAX_BATTLE_ALERTS_PER_TICK = 1;
     /** Max pit-stop alerts per 2-second tick. */
     private static final int MAX_PIT_ALERTS_PER_TICK = 2;
 

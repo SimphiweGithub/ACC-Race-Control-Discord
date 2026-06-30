@@ -41,6 +41,11 @@ public final class RaceFeedPublisher implements EventListener {
     private final Map<Integer, Integer> personalBestMs = new HashMap<>();
     /** carId -> last time (epoch ms) a PB ping DM was sent for that driver. */
     private final Map<Integer, Long> pbPingLastFire = new HashMap<>();
+    /**
+     * Last session key we announced — prevents double-fire when ACC emits
+     * SessionChangedEvent more than once for the same session transition.
+     */
+    private String lastAnnouncedSessionKey = "";
 
     private RaceFeedPublisher() {}
 
@@ -146,12 +151,19 @@ public final class RaceFeedPublisher implements EventListener {
     }
 
     private void handleSessionChange(DiscordService discord, SessionChangedEvent sc) {
+        // ACC sometimes fires SessionChangedEvent twice for the same transition.
+        // Guard against duplicate announcements by tracking the last session key.
+        var sid = sc.getSessionId();
+        String key = sid.getType() + "_" + sid.getIndex();
+        if (key.equals(lastAnnouncedSessionKey)) return;
+        lastAnnouncedSessionKey = key;
+
         sessionBestMs = null;
         personalBestMs.clear();
         pbPingLastFire.clear();
         discord.resetLiveBoard();
-        String sessionType = sc.getSessionId().getType() != null
-            ? sc.getSessionId().getType().name() : "SESSION";
+        String sessionType = sid.getType() != null
+            ? sid.getType().name() : "SESSION";
         discord.postFeed("**" + sessionType + "** is starting");
     }
 }

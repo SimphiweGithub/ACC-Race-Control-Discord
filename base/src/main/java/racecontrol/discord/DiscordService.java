@@ -20,14 +20,26 @@ public final class DiscordService {
 
     private final JDA jda;
     private final long feedChannelId;
+    /**
+     * Separate channel for the live leaderboard, or 0 to share with feedChannelId.
+     * When non-zero, updateLiveBoard() posts here so alerts and the board stay in
+     * different channels.
+     */
+    private final long boardChannelId;
     private volatile String liveBoardMessageId;
 
-    private DiscordService(JDA jda, long feedChannelId) {
-        this.jda = jda;
+    private DiscordService(JDA jda, long feedChannelId, long boardChannelId) {
+        this.jda           = jda;
         this.feedChannelId = feedChannelId;
+        this.boardChannelId = boardChannelId;
     }
 
-    public static synchronized DiscordService start(String token, long guildId, long feedChannelId)
+    /**
+     * Start with a dedicated board channel.
+     * Pass {@code boardChannelId = 0} to use the feed channel for the leaderboard too.
+     */
+    public static synchronized DiscordService start(String token, long guildId,
+            long feedChannelId, long boardChannelId)
             throws InterruptedException {
         if (instance != null) {
             LOG.info("DiscordService already running");
@@ -62,7 +74,7 @@ public final class DiscordService {
 
         jda.addEventListener(new DiscordCommandListener(feedChannelId));
 
-        instance = new DiscordService(jda, feedChannelId);
+        instance = new DiscordService(jda, feedChannelId, boardChannelId);
         LOG.info("Discord bot connected and ready.");
 
         // Fire stop() on JVM exit (app closed, crash, task-killed) so the
@@ -113,12 +125,19 @@ public final class DiscordService {
         if (ch != null) ch.sendMessageEmbeds(embed).queue(null, err -> LOG.log(Level.WARNING, "Discord embed failed", err));
     }
 
+    public long getBoardChannelId() {
+        return boardChannelId > 0 ? boardChannelId : feedChannelId;
+    }
+
     /**
      * Edit the live board message in place.
-     * Creates and pins it on first call; re-creates it if the message was deleted.
+     * Uses the dedicated board channel when configured; otherwise falls back to the
+     * feed channel. Creates and pins the message on first call; re-creates it if
+     * the message was deleted.
      */
     public void updateLiveBoard(String content) {
-        TextChannel ch = jda.getChannelById(TextChannel.class, feedChannelId);
+        long targetChannelId = boardChannelId > 0 ? boardChannelId : feedChannelId;
+        TextChannel ch = jda.getChannelById(TextChannel.class, targetChannelId);
         if (ch == null) return;
 
         if (liveBoardMessageId == null) {
