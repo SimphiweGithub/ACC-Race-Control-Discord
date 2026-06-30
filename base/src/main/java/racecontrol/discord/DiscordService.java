@@ -64,11 +64,21 @@ public final class DiscordService {
 
         instance = new DiscordService(jda, feedChannelId);
         LOG.info("Discord bot connected and ready.");
+
+        // Let the channel know the bot is live
+        instance.postFeed("**Race Control is online** - /follow /standings /gap /battle /pace /pitstops");
         return instance;
     }
 
     public static synchronized void stop() {
         if (instance != null) {
+            // Send shutdown message synchronously so it fires before JDA closes
+            try {
+                TextChannel ch = instance.jda.getChannelById(TextChannel.class, instance.feedChannelId);
+                if (ch != null) ch.sendMessage("**Race Control is going offline**").complete();
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "Could not send shutdown message", e);
+            }
             instance.jda.shutdown();
             instance = null;
             LOG.info("Discord bot shut down.");
@@ -129,5 +139,23 @@ public final class DiscordService {
     /** Call on session change so the next session gets a fresh board message. */
     public void resetLiveBoard() {
         liveBoardMessageId = null;
+    }
+
+    /**
+     * Send a private DM to a Discord user by their ID.
+     * Silently ignored if the user has DMs disabled.
+     */
+    public void dmUser(String userId, String message) {
+        jda.openPrivateChannelById(userId)
+           .flatMap(ch -> ch.sendMessage(message))
+           .queue(null, err -> {
+               if (err instanceof net.dv8tion.jda.api.exceptions.ErrorResponseException ere
+                       && ere.getErrorResponse()
+                              == net.dv8tion.jda.api.requests.ErrorResponse.CANNOT_SEND_TO_USER) {
+                   LOG.fine("Cannot DM user " + userId + " - DMs are disabled");
+               } else {
+                   LOG.log(Level.WARNING, "Failed to DM user " + userId, err);
+               }
+           });
     }
 }

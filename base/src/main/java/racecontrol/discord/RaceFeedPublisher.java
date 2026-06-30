@@ -19,7 +19,9 @@ import racecontrol.utility.TimeUtils;
 
 import java.awt.Color;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -31,9 +33,14 @@ public final class RaceFeedPublisher implements EventListener {
     private static final java.util.concurrent.atomic.AtomicBoolean REGISTERED =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
+    /** Minimum gap between personal-best DM pings for the same driver (3 minutes). */
+    private static final long PB_PING_COOLDOWN_MS = 3 * 60 * 1_000L;
+
     private Integer sessionBestMs = null;
     /** carId -> personal best lap time ms for this session. */
-    private final java.util.Map<Integer, Integer> personalBestMs = new java.util.HashMap<>();
+    private final Map<Integer, Integer> personalBestMs = new HashMap<>();
+    /** carId -> last time (epoch ms) a PB ping DM was sent for that driver. */
+    private final Map<Integer, Long> pbPingLastFire = new HashMap<>();
 
     private RaceFeedPublisher() {}
 
@@ -90,13 +97,12 @@ public final class RaceFeedPublisher implements EventListener {
 
         discord.postFeedEmbed(embed.build());
 
-        // Ping followers of any driver involved
+        // DM each follower privately — contact alerts stay out of the channel
         for (Car car : cars) {
             String name = car.getDriver().fullName();
-            List<String> followers = FollowStore.followersOf(name);
-            if (!followers.isEmpty()) {
-                String pings = followers.stream().map(id -> "<@" + id + ">").collect(Collectors.joining(" "));
-                discord.postFeed(pings + " **" + name + "** was involved in a contact (P" + car.realtimePosition + ")");
+            String msg  = "**" + name + "** was involved in a contact (P" + car.realtimePosition + ")";
+            for (String userId : FollowStore.followersOf(name)) {
+                discord.dmUser(userId, msg);
             }
         }
     }
@@ -118,18 +124,22 @@ public final class RaceFeedPublisher implements EventListener {
                 .build());
         }
 
-        // Ping followers only when the driver sets a new personal best.
+        // DM followers when the driver sets a new personal best.
         // Skips the very first lap (no previous time to beat yet).
+        // Rate-limited to once per PB_PING_COOLDOWN_MS per driver to avoid qualifying spam.
         Integer prevBest = personalBestMs.get(car.id);
         if (prevBest == null || ms < prevBest) {
             personalBestMs.put(car.id, ms);
             if (prevBest != null) {
-                List<String> followers = FollowStore.followersOf(driverName);
-                if (!followers.isEmpty()) {
-                    String pings = followers.stream()
-                            .map(id -> "<@" + id + ">").collect(Collectors.joining(" "));
-                    discord.postFeed(pings + " **" + driverName + "** new personal best: "
-                            + TimeUtils.asLapTime(ms) + " (P" + car.realtimePosition + ")");
+                long now = System.currentTimeMillis();
+                Long lastFire = pbPingLastFire.get(car.id);
+                if (lastFire == null || (now - lastFire) >= PB_PING_COOLDOWN_MS) {
+                    pbPingLastFire.put(car.id, now);
+                    String msg = "**" + driverName + "** new personal best: "
+                            + TimeUtils.asLapTime(ms) + " (P" + car.realtimePosition + ")";
+                    for (String userId : FollowStore.followersOf(driverName)) {
+                        discord.dmUser(userId, msg);
+                    }
                 }
             }
         }
@@ -138,6 +148,7 @@ public final class RaceFeedPublisher implements EventListener {
     private void handleSessionChange(DiscordService discord, SessionChangedEvent sc) {
         sessionBestMs = null;
         personalBestMs.clear();
+        pbPingLastFire.clear();
         discord.resetLiveBoard();
         String sessionType = sc.getSessionId().getType() != null
             ? sc.getSessionId().getType().name() : "SESSION";
