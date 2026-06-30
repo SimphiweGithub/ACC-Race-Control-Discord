@@ -27,11 +27,19 @@ public final class RaceFeedPublisher implements EventListener {
 
     private static final Logger LOG = Logger.getLogger(RaceFeedPublisher.class.getName());
 
+    /** Guard against double-registration (Main auto-start + GUI Connect both call register()). */
+    private static final java.util.concurrent.atomic.AtomicBoolean REGISTERED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
     private Integer sessionBestMs = null;
 
     private RaceFeedPublisher() {}
 
     public static void register() {
+        if (!REGISTERED.compareAndSet(false, true)) {
+            LOG.warning("RaceFeedPublisher already registered — ignoring duplicate call.");
+            return;
+        }
         EventBus.register(new RaceFeedPublisher());
         LOG.info("RaceFeedPublisher registered.");
     }

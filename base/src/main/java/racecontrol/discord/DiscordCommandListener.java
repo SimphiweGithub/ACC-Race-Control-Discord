@@ -16,7 +16,6 @@ import racecontrol.utility.TimeUtils;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -63,8 +62,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
             return;
         }
 
-        List<Car> cars = new ArrayList<>(model.getCars());
-        cars.sort(Comparator.comparingInt(c -> c.realtimePosition <= 0 ? Integer.MAX_VALUE : c.realtimePosition));
+        List<Car> cars = LiveBoardPublisher.dedupedCars(model.getCars());
 
         SessionMode mode = mapMode(model.currentSessionId.getType());
         String track = model.trackInfo != null ? model.trackInfo.getTrackName() : "Unknown";

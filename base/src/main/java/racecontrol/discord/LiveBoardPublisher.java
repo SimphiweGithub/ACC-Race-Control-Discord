@@ -11,7 +11,9 @@ import racecontrol.utility.DiscordLeaderboardManager.SessionMode;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -60,8 +62,7 @@ public final class LiveBoardPublisher {
             SessionMode mode = mapMode(sessionType);
             String track = model.trackInfo != null ? model.trackInfo.getTrackName() : "Unknown";
 
-            List<Car> cars = new ArrayList<>(model.getCars());
-            cars.sort(Comparator.comparingInt(c -> c.realtimePosition <= 0 ? Integer.MAX_VALUE : c.realtimePosition));
+            List<Car> cars = dedupedCars(model.getCars());
 
             List<LeaderboardEntry> rows = buildRows(cars, mode);
             String content = DiscordLeaderboardManager.buildMessage(mode, track, rows);
@@ -115,6 +116,27 @@ public final class LiveBoardPublisher {
     private static Duration splitMs(List<Integer> splits, int idx) {
         if (splits == null || splits.size() <= idx) return null;
         return ms(splits.get(idx));
+    }
+
+    /**
+     * Deduplicate the car list by car ID and sort by position.
+     * The ACC model can accumulate stale entries between sessions, producing the
+     * same car twice (or two cars with the same realtimePosition). Keep the entry
+     * with the better (lower) position for each car ID.
+     */
+    static List<Car> dedupedCars(java.util.Collection<Car> raw) {
+        Map<Integer, Car> byId = new LinkedHashMap<>();
+        for (Car c : raw) {
+            byId.merge(c.id, c, (a, b) -> {
+                boolean aValid = a.realtimePosition > 0;
+                boolean bValid = b.realtimePosition > 0;
+                if (aValid && bValid) return a.realtimePosition <= b.realtimePosition ? a : b;
+                return aValid ? a : b;
+            });
+        }
+        List<Car> deduped = new ArrayList<>(byId.values());
+        deduped.sort(Comparator.comparingInt(c -> c.realtimePosition <= 0 ? Integer.MAX_VALUE : c.realtimePosition));
+        return deduped;
     }
 
     private static SessionMode mapMode(SessionType t) {
