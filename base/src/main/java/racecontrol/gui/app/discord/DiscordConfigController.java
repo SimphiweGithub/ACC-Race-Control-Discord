@@ -51,10 +51,9 @@ public class DiscordConfigController implements PageController {
         String token      = panel.tokenField.getValue().trim();
         String guildStr   = panel.guildField.getValue().trim();
         String channelStr = panel.channelField.getValue().trim();
-        String boardStr   = panel.boardField.getValue().trim();  // optional
 
         if (token.isEmpty() || guildStr.isEmpty() || channelStr.isEmpty()) {
-            panel.setStatus("Fill in Bot Token, Server ID and Feed Channel ID.", false);
+            panel.setStatus("Fill in all three fields before connecting.", false);
             return;
         }
 
@@ -67,29 +66,18 @@ public class DiscordConfigController implements PageController {
             return;
         }
 
-        long boardChannelId = 0;
-        if (!boardStr.isEmpty()) {
-            try {
-                boardChannelId = Long.parseLong(boardStr);
-            } catch (NumberFormatException ex) {
-                panel.setStatus("Board Channel ID must be a number (or leave it blank).", false);
-                return;
-            }
-        }
-
         panel.setStatus("Connecting...", false);
 
         // Save to PersistantConfig so values are restored on next launch
-        PersistantConfig.put(DISCORD_BOT_TOKEN,        token);
-        PersistantConfig.put(DISCORD_GUILD_ID,         guildStr);
-        PersistantConfig.put(DISCORD_CHANNEL_ID,       channelStr);
-        PersistantConfig.put(DISCORD_BOARD_CHANNEL_ID, boardStr);
+        PersistantConfig.put(DISCORD_BOT_TOKEN,  token);
+        PersistantConfig.put(DISCORD_GUILD_ID,   guildStr);
+        PersistantConfig.put(DISCORD_CHANNEL_ID, channelStr);
 
-        final long finalBoardChannelId = boardChannelId;
         // Connect on a background thread so the UI doesn't freeze during JDA awaitReady()
         Thread t = new Thread(() -> {
             try {
-                DiscordService.start(token, guildId, channelId, finalBoardChannelId);
+                // boardChannelId = 0 means leaderboard shares the same channel
+                DiscordService.start(token, guildId, channelId, 0);
                 RaceFeedPublisher.register();
                 LapHistoryStore.register();
                 LiveBoardPublisher.start();
