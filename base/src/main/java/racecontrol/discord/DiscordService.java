@@ -65,6 +65,10 @@ public final class DiscordService {
         instance = new DiscordService(jda, feedChannelId);
         LOG.info("Discord bot connected and ready.");
 
+        // Fire stop() on JVM exit (app closed, crash, task-killed) so the
+        // offline message is always sent and JDA shuts down cleanly.
+        Runtime.getRuntime().addShutdownHook(new Thread(DiscordService::stop, "discord-shutdown-hook"));
+
         // Let the channel know the bot is live
         instance.postFeed("**Race Control is online** - /follow /standings /gap /battle /pace /pitstops");
         return instance;
