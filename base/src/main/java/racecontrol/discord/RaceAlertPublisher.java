@@ -14,6 +14,7 @@ import racecontrol.utility.TimeUtils;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -109,7 +110,7 @@ public final class RaceAlertPublisher {
                     .map(c -> c.lapCount >= 1)
                     .orElse(false);
 
-            checkLeadChange(discord, cars, sessionTimeMs);
+            if (raceUnderway) checkLeadChange(discord, cars, sessionTimeMs);
             if (raceUnderway) checkBattles(discord, cars);
             checkPitStops(discord, cars, sessionTimeMs);
             checkHalfway(discord, sessionTimeMs, sessionEndMs);
@@ -172,7 +173,7 @@ public final class RaceAlertPublisher {
             if (lastFire != null && (now - lastFire) < BATTLE_COOLDOWN_MS) continue;
 
             battleLastFire.put(pairKey, now);
-            discord.postFeed(String.format("**BATTLE** - %s (P%d) vs %s (P%d) - %.3fs",
+            discord.postFeed(String.format(Locale.US, "**BATTLE** - %s (P%d) vs %s (P%d) - %.3fs",
                     car.getDriver().fullName(),   car.realtimePosition,
                     ahead.getDriver().fullName(), ahead.realtimePosition,
                     car.gapPositionAhead / 1000.0));

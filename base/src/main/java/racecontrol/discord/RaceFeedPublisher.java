@@ -12,6 +12,7 @@ import racecontrol.client.extension.vsc.events.VSCEndEvent;
 import racecontrol.client.extension.vsc.events.VSCStartEvent;
 import racecontrol.client.extension.vsc.events.VSCViolationEvent;
 import racecontrol.client.model.Car;
+import racecontrol.client.protocol.enums.SessionType;
 import racecontrol.eventbus.Event;
 import racecontrol.eventbus.EventBus;
 import racecontrol.eventbus.EventListener;
@@ -19,6 +20,7 @@ import racecontrol.utility.TimeUtils;
 
 import java.awt.Color;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +47,9 @@ public final class RaceFeedPublisher implements EventListener {
      * Last session key we announced — prevents double-fire when ACC emits
      * SessionChangedEvent more than once for the same session transition.
      */
-    private String lastAnnouncedSessionKey = "";
+    private String      lastAnnouncedSessionKey = "";
+    /** Type of the previous session — used to detect when a race finishes. */
+    private SessionType lastSessionType         = null;
 
     private RaceFeedPublisher() {}
 
@@ -158,6 +162,12 @@ public final class RaceFeedPublisher implements EventListener {
         if (key.equals(lastAnnouncedSessionKey)) return;
         lastAnnouncedSessionKey = key;
 
+        // Post race podium before wiping state — car positions are still valid here.
+        if (lastSessionType == SessionType.RACE) {
+            postPodium(discord);
+        }
+        lastSessionType = sid.getType();
+
         sessionBestMs = null;
         personalBestMs.clear();
         pbPingLastFire.clear();
@@ -165,5 +175,23 @@ public final class RaceFeedPublisher implements EventListener {
         String sessionType = sid.getType() != null
             ? sid.getType().name() : "SESSION";
         discord.postFeed("**" + sessionType + "** is starting");
+    }
+
+    private void postPodium(DiscordService discord) {
+        Model model = AccBroadcastingClient.getClient().getModel();
+        List<Car> top = new ArrayList<>(model.getCars()).stream()
+            .filter(c -> c.realtimePosition >= 1 && c.realtimePosition <= 3)
+            .sorted(Comparator.comparingInt(c -> c.realtimePosition))
+            .collect(Collectors.toList());
+
+        if (top.isEmpty()) return;
+
+        String[] labels = {"P1", "P2", "P3"};
+        StringBuilder sb = new StringBuilder("**Race Result**\n");
+        for (Car car : top) {
+            sb.append(labels[car.realtimePosition - 1])
+              .append(" **").append(car.getDriver().fullName()).append("**\n");
+        }
+        discord.postFeed(sb.toString().trim());
     }
 }

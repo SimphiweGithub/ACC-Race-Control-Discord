@@ -38,7 +38,6 @@ import java.util.concurrent.TimeUnit;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 import racecontrol.appextension.AppExtensionModule;
-// DiscordRotatingPublisher and DiscordF1Ticker removed in favor of webhook-based extension
 
 /**
  *

@@ -17,6 +17,7 @@ import racecontrol.utility.TimeUtils;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 public final class DiscordCommandListener extends ListenerAdapter {
@@ -164,12 +165,12 @@ public final class DiscordCommandListener extends ListenerAdapter {
         if (gapMs <= 0) {
             gapStr = "< 0.001s";
         } else if (gapMs < 60_000) {
-            gapStr = String.format("%.3fs", gapMs / 1000.0);
+            gapStr = String.format(Locale.US, "%.3fs", gapMs / 1000.0);
         } else {
             gapStr = TimeUtils.asDurationShort(gapMs);
         }
 
-        event.reply(String.format("**%s** (P%d) ? **%s** (P%d): +%s",
+        event.reply(String.format("**%s** (P%d) -> **%s** (P%d): +%s",
                 ahead.getDriver().fullName(),  ahead.realtimePosition,
                 behind.getDriver().fullName(), behind.realtimePosition,
                 gapStr))
@@ -200,7 +201,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
                     .findFirst().orElse(null);
             if (ahead == null || ahead.isInPit()) continue;
 
-            sb.append(String.format("P%d **%s** vs P%d **%s** - %.3fs\n",
+            sb.append(String.format(Locale.US, "P%d **%s** vs P%d **%s** - %.3fs\n",
                     car.realtimePosition,   car.getDriver().fullName(),
                     ahead.realtimePosition, ahead.getDriver().fullName(),
                     gap / 1000.0));
