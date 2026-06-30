@@ -58,7 +58,7 @@ jobs:
             --output "$distDir\jre" `
             --no-header-files `
             --no-man-pages `
-            --compress=2
+            --compress=zip-6
           if ($LASTEXITCODE -ne 0) { throw "jlink failed with code $LASTEXITCODE" }
 
           # ── 2. Portable ZIP ───────────────────────────────────────────────────
@@ -71,10 +71,16 @@ jobs:
           Write-Host "[zip] Done: $zipFolder.zip ($([math]::Round((Get-Item "$zipFolder.zip").Length/1MB,1)) MB)"
 
           # ── 3. Installer EXE via jpackage ─────────────────────────────────────
-          # IMPORTANT: do NOT copy data/ into libDir.
-          # jpackage puts --input files into the app\ subdirectory ($APPDIR),
-          # but Processing looks for data\ relative to the working directory (install root).
-          # --app-content places directories at the install ROOT, matching what Processing expects.
+          # jpackage splits paths containing spaces when passed via --app-content,
+          # even when quoted. Stage everything it needs into a short no-spaces path.
+          $pkg = "D:\jp"
+          New-Item -ItemType Directory -Force $pkg | Out-Null
+          Copy-Item -Recurse -Force "$distDir\lib"  "$pkg\lib"
+          Copy-Item -Recurse -Force "$distDir\data" "$pkg\data"
+          Copy-Item -Recurse -Force "$distDir\log"  "$pkg\log"
+          $pkgLib  = "$pkg\lib"
+          $pkgMain = (Get-ChildItem "$pkgLib\base*.jar" | Select-Object -First 1).Name
+
           New-Item -ItemType Directory -Force installer | Out-Null
 
           Write-Host "`n[jpackage] Building installer..."
@@ -84,12 +90,12 @@ jobs:
             "--app-version",      $ver,
             "--description",      "ACC Race Control - Discord spectator bot for ACC",
             "--vendor",           "ACC Race Control",
-            "--input",            $libDir,
-            "--main-jar",         $mainJar,
+            "--input",            $pkgLib,
+            "--main-jar",         $pkgMain,
             "--main-class",       "racecontrol.Main",
             "--java-options",     '-splash:data/loading.png',  # relative to install root (working dir)
-            "--app-content",      "$distDir\data",             # → <install>\data\  (Processing data dir)
-            "--app-content",      "$distDir\log",              # → <install>\log\   (pre-create log dir)
+            "--app-content",      "$pkg\data",                 # → <install>\data\  (Processing data dir)
+            "--app-content",      "$pkg\log",                  # → <install>\log\   (pre-create log dir)
             "--icon",             "favicon\favicon.ico",
             "--win-dir-chooser",
             "--win-shortcut",
