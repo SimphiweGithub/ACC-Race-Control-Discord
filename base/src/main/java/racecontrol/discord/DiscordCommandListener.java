@@ -27,7 +27,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
         this.feedChannelId = feedChannelId;
     }
 
-    // ── Dispatch ──────────────────────────────────────────────────────────────
+    // ?? Dispatch ??????????????????????????????????????????????????????????????
 
     @Override
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
@@ -68,7 +68,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
         event.replyChoices(choices).queue();
     }
 
-    // ── /standings ────────────────────────────────────────────────────────────
+    // ?? /standings ????????????????????????????????????????????????????????????
 
     private void handleStandings(SlashCommandInteractionEvent event) {
         Model model = AccBroadcastingClient.getClient().getModel();
@@ -88,7 +88,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
         event.reply(content).setEphemeral(true).queue();
     }
 
-    // ── /follow, /unfollow, /following ────────────────────────────────────────
+    // ?? /follow, /unfollow, /following ????????????????????????????????????????
 
     private void handleFollow(SlashCommandInteractionEvent event) {
         var option = event.getOption("driver");
@@ -118,7 +118,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
         }
     }
 
-    // ── /gap <driver1> <driver2> ──────────────────────────────────────────────
+    // ?? /gap <driver1> <driver2> ??????????????????????????????????????????????
 
     private void handleGap(SlashCommandInteractionEvent event) {
         Model model = AccBroadcastingClient.getClient().getModel();
@@ -157,7 +157,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
         Car ahead  = c1.realtimePosition < c2.realtimePosition ? c1 : c2;
         Car behind = c1.realtimePosition < c2.realtimePosition ? c2 : c1;
 
-        // Use gapToLeader difference — works for any pair regardless of adjacency
+        // Use gapToLeader difference - works for any pair regardless of adjacency
         int gapMs = Math.abs(behind.gapToLeader - ahead.gapToLeader);
 
         String gapStr;
@@ -169,14 +169,14 @@ public final class DiscordCommandListener extends ListenerAdapter {
             gapStr = TimeUtils.asDurationShort(gapMs);
         }
 
-        event.reply(String.format("**%s** (P%d) → **%s** (P%d): +%s",
+        event.reply(String.format("**%s** (P%d) ? **%s** (P%d): +%s",
                 ahead.getDriver().fullName(),  ahead.realtimePosition,
                 behind.getDriver().fullName(), behind.realtimePosition,
                 gapStr))
              .setEphemeral(true).queue();
     }
 
-    // ── /battle ───────────────────────────────────────────────────────────────
+    // ?? /battle ???????????????????????????????????????????????????????????????
 
     private void handleBattle(SlashCommandInteractionEvent event) {
         Model model = AccBroadcastingClient.getClient().getModel();
@@ -186,7 +186,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
         }
 
         List<Car> cars = LiveBoardPublisher.dedupedCars(model.getCars());
-        StringBuilder sb = new StringBuilder("**⚔️ Battles on track** (gap < 1.0s)\n");
+        StringBuilder sb = new StringBuilder("**Battles on track** (gap < 1.0s)\n");
         boolean any = false;
 
         for (Car car : cars) {
@@ -200,7 +200,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
                     .findFirst().orElse(null);
             if (ahead == null || ahead.isInPit()) continue;
 
-            sb.append(String.format("P%d **%s** vs P%d **%s** — %.3fs\n",
+            sb.append(String.format("P%d **%s** vs P%d **%s** - %.3fs\n",
                     car.realtimePosition,   car.getDriver().fullName(),
                     ahead.realtimePosition, ahead.getDriver().fullName(),
                     gap / 1000.0));
@@ -212,7 +212,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
         event.reply(sb.toString().trim()).setEphemeral(true).queue();
     }
 
-    // ── /pace <driver> ────────────────────────────────────────────────────────
+    // ?? /pace <driver> ????????????????????????????????????????????????????????
 
     private void handlePace(SlashCommandInteractionEvent event) {
         Model model = AccBroadcastingClient.getClient().getModel();
@@ -244,14 +244,14 @@ public final class DiscordCommandListener extends ListenerAdapter {
             return;
         }
 
-        StringBuilder sb = new StringBuilder("**📊 " + driverName + "** — last " + laps.size() + " lap(s)\n");
+        StringBuilder sb = new StringBuilder("**" + driverName + "** - last " + laps.size() + " lap(s)\n");
         int total = 0;
         for (int i = 0; i < laps.size(); i++) {
             int ms = laps.get(i);
             total += ms;
             boolean isLatest = (i == laps.size() - 1);
             sb.append(String.format("  Lap %d: %s%s\n", i + 1, TimeUtils.asLapTime(ms),
-                    isLatest ? "  ← latest" : ""));
+                    isLatest ? "  <- latest" : ""));
         }
         if (laps.size() > 1) {
             sb.append(String.format("  Average: %s\n", TimeUtils.asLapTime(total / laps.size())));
@@ -260,7 +260,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
         event.reply(sb.toString().trim()).setEphemeral(true).queue();
     }
 
-    // ── /pitstops ─────────────────────────────────────────────────────────────
+    // ?? /pitstops ?????????????????????????????????????????????????????????????
 
     private void handlePitstops(SlashCommandInteractionEvent event) {
         Model model = AccBroadcastingClient.getClient().getModel();
@@ -282,7 +282,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
         long carsWithStop = cars.stream().filter(c -> c.pitlaneCount > 0).count();
         boolean markLong = carsWithStop > cars.size() / 2;
 
-        StringBuilder sb = new StringBuilder("**🔧 Pit Stops**\n");
+        StringBuilder sb = new StringBuilder("**?? Pit Stops**\n");
         for (Car car : cars) {
             String pos    = String.format("P%-2d", car.realtimePosition);
             String name   = car.getDriver().fullName();
@@ -292,9 +292,9 @@ public final class DiscordCommandListener extends ListenerAdapter {
             String stopStr = stops == 1 ? "1 stop" : stops + " stops";
             String suffix  = "";
             if (inPit) {
-                suffix = " 🟡 IN PIT";
+                suffix = " IN PIT";
             } else if (stops == 0 && markLong) {
-                suffix = " ⚠️";
+                suffix = " (!)";
             }
 
             sb.append(String.format("%s %-20s %s%s\n", pos, name, stopStr, suffix));
@@ -306,7 +306,7 @@ public final class DiscordCommandListener extends ListenerAdapter {
         event.reply(wrapped.length() <= 2000 ? wrapped : reply).setEphemeral(true).queue();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ?? Helpers ???????????????????????????????????????????????????????????????
 
     private List<LeaderboardEntry> buildRows(List<Car> cars, SessionMode mode) {
         List<LeaderboardEntry> rows = new ArrayList<>();

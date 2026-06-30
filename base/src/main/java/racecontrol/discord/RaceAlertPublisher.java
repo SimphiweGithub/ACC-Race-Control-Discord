@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Leonard Schüngel
+ * Copyright (c) 2021 Leonard Sch?ngel
  *
  * For licensing information see the included license (LICENSE.txt)
  */
@@ -62,7 +62,7 @@ public final class RaceAlertPublisher {
         LOG.info("RaceAlertPublisher started (2 s interval).");
     }
 
-    // ── Main tick ─────────────────────────────────────────────────────────────
+    // ?? Main tick ?????????????????????????????????????????????????????????????
 
     private static void tick() {
         try {
@@ -72,7 +72,7 @@ public final class RaceAlertPublisher {
             Model model = AccBroadcastingClient.getClient().getModel();
             if (!model.gameConnected) return;
 
-            // Detect session change — reset all state
+            // Detect session change - reset all state
             var sid = model.currentSessionId;
             String key = sid.getType() + "_" + sid.getIndex();
             if (!key.equals(lastSessionKey)) {
@@ -99,7 +99,7 @@ public final class RaceAlertPublisher {
         }
     }
 
-    // ── Lead change ───────────────────────────────────────────────────────────
+    // ?? Lead change ???????????????????????????????????????????????????????????
 
     private static void checkLeadChange(DiscordService discord, List<Car> cars, int sessionTimeMs) {
         Car leader = cars.stream()
@@ -108,7 +108,7 @@ public final class RaceAlertPublisher {
         if (leader == null) return;
 
         if (currentLeaderId == -1) {
-            // First observation — initialise silently
+            // First observation - initialise silently
             currentLeaderId = leader.id;
             return;
         }
@@ -120,11 +120,11 @@ public final class RaceAlertPublisher {
         String oldName = old != null ? old.getDriver().fullName() : "Unknown";
         String elapsed = TimeUtils.asDurationShort(sessionTimeMs);
 
-        discord.postFeed("🏆 **LEAD CHANGE** — **" + leader.getDriver().fullName()
+        discord.postFeed("**LEAD CHANGE** - **" + leader.getDriver().fullName()
                 + "** takes the lead from " + oldName + " (" + elapsed + " elapsed)");
     }
 
-    // ── Battles ───────────────────────────────────────────────────────────────
+    // ?? Battles ???????????????????????????????????????????????????????????????
 
     private static void checkBattles(DiscordService discord, List<Car> cars) {
         long now = System.currentTimeMillis();
@@ -146,34 +146,34 @@ public final class RaceAlertPublisher {
             if (lastFire != null && (now - lastFire) < BATTLE_COOLDOWN_MS) continue;
 
             battleLastFire.put(pairKey, now);
-            discord.postFeed(String.format("⚔️ **BATTLE** — %s (P%d) vs %s (P%d) — %.3fs",
+            discord.postFeed(String.format("**BATTLE** - %s (P%d) vs %s (P%d) - %.3fs",
                     car.getDriver().fullName(),   car.realtimePosition,
                     ahead.getDriver().fullName(), ahead.realtimePosition,
                     gap / 1000.0));
         }
     }
 
-    // ── Pit stops ─────────────────────────────────────────────────────────────
+    // ?? Pit stops ?????????????????????????????????????????????????????????????
 
     private static void checkPitStops(DiscordService discord, List<Car> cars, int sessionTimeMs) {
         for (Car car : cars) {
             int prev = pitCounts.getOrDefault(car.id, Integer.MIN_VALUE);
             int curr = car.pitlaneCount;
             if (prev == Integer.MIN_VALUE) {
-                // First time we see this car — record baseline without alerting
+                // First time we see this car - record baseline without alerting
                 pitCounts.put(car.id, curr);
                 continue;
             }
             if (curr > prev) {
                 pitCounts.put(car.id, curr);
                 String elapsed = TimeUtils.asDurationShort(sessionTimeMs);
-                discord.postFeed("🔧 **" + car.getDriver().fullName().toUpperCase()
-                        + "** pits (stop " + curr + " · " + elapsed + " elapsed)");
+                discord.postFeed("**" + car.getDriver().fullName().toUpperCase()
+                        + "** pits (stop " + curr + " | " + elapsed + " elapsed)");
             }
         }
     }
 
-    // ── Halfway ───────────────────────────────────────────────────────────────
+    // ?? Halfway ???????????????????????????????????????????????????????????????
 
     private static void checkHalfway(DiscordService discord, int sessionTimeMs, int sessionEndMs) {
         if (halfwayFired || sessionEndMs <= 0 || sessionTimeMs <= 0) return;
@@ -181,7 +181,7 @@ public final class RaceAlertPublisher {
             halfwayFired = true;
             String elapsed   = TimeUtils.asDurationShort(sessionTimeMs);
             String remaining = TimeUtils.asDurationShort(Math.max(0, sessionEndMs - sessionTimeMs));
-            discord.postFeed("⏱️ **Halfway** — " + elapsed + " elapsed · " + remaining + " remaining");
+            discord.postFeed("**Halfway** - " + elapsed + " elapsed | " + remaining + " remaining");
         }
     }
 }
